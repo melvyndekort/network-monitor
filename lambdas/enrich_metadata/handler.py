@@ -5,9 +5,9 @@ import urllib3
 import boto3
 import os
 
-# DynamoDB setup
+# DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
-devices_table = dynamodb.Table(os.environ['DEVICES_TABLE'])
+devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 
 # HTTP client
 http = urllib3.PoolManager()

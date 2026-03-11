@@ -3,9 +3,9 @@ import json
 import os
 import boto3
 
-# DynamoDB setup
+# DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
-devices_table = dynamodb.Table(os.environ['DEVICES_TABLE'])
+devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 
 
 def handler(event, context):
@@ -59,12 +59,14 @@ def update_device(mac, updates):
     filtered = {k: v for k, v in updates.items() if k in allowed}
     
     if filtered:
-        update_expr = 'SET ' + ', '.join(f'{k} = :{k}' for k in filtered.keys())
+        update_expr = 'SET ' + ', '.join(f'#{k} = :{k}' for k in filtered.keys())
+        expr_names = {f'#{k}': k for k in filtered.keys()}
         expr_values = {f':{k}': v for k, v in filtered.items()}
         
         devices_table.update_item(
             Key={'mac': mac},
             UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names,
             ExpressionAttributeValues=expr_values
         )
     
