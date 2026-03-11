@@ -3,10 +3,11 @@ output "sqs_queue_url" {
   value       = aws_sqs_queue.device_events.url
 }
 
-output "api_gateway_url" {
-  description = "API Gateway URL for REST API"
-  value       = aws_apigatewayv2_api.network_monitor.api_endpoint
-}
+# TODO: Uncomment when API Gateway is created
+# output "api_gateway_url" {
+#   description = "API Gateway URL for REST API"
+#   value       = aws_apigatewayv2_api.network_monitor.api_endpoint
+# }
 
 output "dynamodb_tables" {
   description = "DynamoDB table names"
