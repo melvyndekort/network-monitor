@@ -2,12 +2,12 @@
 
 # Primary SQS Queue - Entry point from Vector
 resource "aws_sqs_queue" "device_events" {
-  name                       = "network-monitor-device-events.fifo"
-  fifo_queue                 = true
+  name                        = "network-monitor-device-events.fifo"
+  fifo_queue                  = true
   content_based_deduplication = true
-  message_retention_seconds  = 1209600 # 14 days
-  visibility_timeout_seconds = 60
-  
+  message_retention_seconds   = 1209600 # 14 days
+  visibility_timeout_seconds  = 60
+
   tags = {
     Name = "network-monitor-device-events"
   }
@@ -17,7 +17,7 @@ resource "aws_sqs_queue" "device_events_dlq" {
   name                      = "network-monitor-device-events-dlq.fifo"
   fifo_queue                = true
   message_retention_seconds = 1209600 # 14 days
-  
+
   tags = {
     Name = "network-monitor-device-events-dlq"
   }
@@ -26,7 +26,7 @@ resource "aws_sqs_queue" "device_events_dlq" {
 # SNS Topics for event routing
 resource "aws_sns_topic" "device_discovered" {
   name = "network-monitor-device-discovered"
-  
+
   tags = {
     Name = "network-monitor-device-discovered"
   }
@@ -34,7 +34,7 @@ resource "aws_sns_topic" "device_discovered" {
 
 resource "aws_sns_topic" "device_activity" {
   name = "network-monitor-device-activity"
-  
+
   tags = {
     Name = "network-monitor-device-activity"
   }
@@ -42,7 +42,7 @@ resource "aws_sns_topic" "device_activity" {
 
 resource "aws_sns_topic" "device_state_changed" {
   name = "network-monitor-device-state-changed"
-  
+
   tags = {
     Name = "network-monitor-device-state-changed"
   }
@@ -53,12 +53,12 @@ resource "aws_sqs_queue" "presence_tracker" {
   name                       = "network-monitor-presence-tracker"
   visibility_timeout_seconds = 60
   message_retention_seconds  = 345600 # 4 days
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.presence_tracker_dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name = "network-monitor-presence-tracker"
   }
@@ -67,7 +67,7 @@ resource "aws_sqs_queue" "presence_tracker" {
 resource "aws_sqs_queue" "presence_tracker_dlq" {
   name                      = "network-monitor-presence-tracker-dlq"
   message_retention_seconds = 1209600 # 14 days
-  
+
   tags = {
     Name = "network-monitor-presence-tracker-dlq"
   }
@@ -77,12 +77,12 @@ resource "aws_sqs_queue" "notifier" {
   name                       = "network-monitor-notifier"
   visibility_timeout_seconds = 60
   message_retention_seconds  = 345600 # 4 days
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.notifier_dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name = "network-monitor-notifier"
   }
@@ -91,7 +91,7 @@ resource "aws_sqs_queue" "notifier" {
 resource "aws_sqs_queue" "notifier_dlq" {
   name                      = "network-monitor-notifier-dlq"
   message_retention_seconds = 1209600 # 14 days
-  
+
   tags = {
     Name = "network-monitor-notifier-dlq"
   }
@@ -101,12 +101,12 @@ resource "aws_sqs_queue" "metadata_enricher" {
   name                       = "network-monitor-metadata-enricher"
   visibility_timeout_seconds = 60
   message_retention_seconds  = 345600 # 4 days
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.metadata_enricher_dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name = "network-monitor-metadata-enricher"
   }
@@ -115,7 +115,7 @@ resource "aws_sqs_queue" "metadata_enricher" {
 resource "aws_sqs_queue" "metadata_enricher_dlq" {
   name                      = "network-monitor-metadata-enricher-dlq"
   message_retention_seconds = 1209600 # 14 days
-  
+
   tags = {
     Name = "network-monitor-metadata-enricher-dlq"
   }

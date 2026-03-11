@@ -108,8 +108,8 @@ resource "aws_iam_role_policy" "track_presence" {
         ]
       },
       {
-        Effect = "Allow"
-        Action = "sns:Publish"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
         Resource = aws_sns_topic.device_state_changed.arn
       },
       {

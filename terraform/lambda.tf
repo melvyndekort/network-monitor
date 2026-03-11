@@ -9,17 +9,17 @@ resource "aws_lambda_function" "event_router" {
   runtime       = "python3.12"
   timeout       = 30
   memory_size   = 256
-  
+
   environment {
     variables = {
-      DEVICES_TABLE     = aws_dynamodb_table.devices.name
-      EVENTS_TABLE      = aws_dynamodb_table.device_events.name
-      DEDUP_TABLE       = aws_dynamodb_table.deduplication.name
-      TOPIC_DISCOVERED  = aws_sns_topic.device_discovered.arn
-      TOPIC_ACTIVITY    = aws_sns_topic.device_activity.arn
+      DEVICES_TABLE    = aws_dynamodb_table.devices.name
+      EVENTS_TABLE     = aws_dynamodb_table.device_events.name
+      DEDUP_TABLE      = aws_dynamodb_table.deduplication.name
+      TOPIC_DISCOVERED = aws_sns_topic.device_discovered.arn
+      TOPIC_ACTIVITY   = aws_sns_topic.device_activity.arn
     }
   }
-  
+
   lifecycle {
     ignore_changes = [filename]
   }
@@ -40,7 +40,7 @@ resource "aws_lambda_function" "track_presence" {
   runtime       = "python3.12"
   timeout       = 30
   memory_size   = 256
-  
+
   environment {
     variables = {
       DEVICES_TABLE       = aws_dynamodb_table.devices.name
@@ -48,7 +48,7 @@ resource "aws_lambda_function" "track_presence" {
       TOPIC_STATE_CHANGED = aws_sns_topic.device_state_changed.arn
     }
   }
-  
+
   lifecycle {
     ignore_changes = [filename]
   }
@@ -69,7 +69,7 @@ resource "aws_lambda_function" "send_notifications" {
   runtime       = "python3.12"
   timeout       = 30
   memory_size   = 256
-  
+
   environment {
     variables = {
       DEVICES_TABLE  = aws_dynamodb_table.devices.name
@@ -77,7 +77,7 @@ resource "aws_lambda_function" "send_notifications" {
       APPRISE_URL    = var.apprise_url
     }
   }
-  
+
   lifecycle {
     ignore_changes = [filename]
   }
@@ -98,13 +98,13 @@ resource "aws_lambda_function" "enrich_metadata" {
   runtime       = "python3.12"
   timeout       = 30
   memory_size   = 256
-  
+
   environment {
     variables = {
       DEVICES_TABLE = aws_dynamodb_table.devices.name
     }
   }
-  
+
   lifecycle {
     ignore_changes = [filename]
   }
@@ -125,7 +125,7 @@ resource "aws_lambda_function" "api_handler" {
   runtime       = "python3.12"
   timeout       = 30
   memory_size   = 512
-  
+
   environment {
     variables = {
       DEVICES_TABLE = aws_dynamodb_table.devices.name

@@ -11,9 +11,9 @@ output "api_gateway_url" {
 output "dynamodb_tables" {
   description = "DynamoDB table names"
   value = {
-    devices              = aws_dynamodb_table.devices.name
-    device_events        = aws_dynamodb_table.device_events.name
+    devices               = aws_dynamodb_table.devices.name
+    device_events         = aws_dynamodb_table.device_events.name
     notification_throttle = aws_dynamodb_table.notification_throttle.name
-    deduplication        = aws_dynamodb_table.deduplication.name
+    deduplication         = aws_dynamodb_table.deduplication.name
   }
 }
