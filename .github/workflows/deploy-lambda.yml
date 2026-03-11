@@ -9,6 +9,9 @@ on:
       lambda_dir:
         required: true
         type: string
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
 
 jobs:
   build:
