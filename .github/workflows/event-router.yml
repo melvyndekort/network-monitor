@@ -1,0 +1,17 @@
+name: Deploy event-router
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lambdas/event_router/**'
+      - '.github/workflows/event-router.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-lambda.yml
+    secrets: inherit
+    with:
+      function_name: network-monitor-event-router
+      lambda_dir: lambdas/event_router

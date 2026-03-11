@@ -1,0 +1,17 @@
+name: Deploy enrich-metadata
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lambdas/enrich_metadata/**'
+      - '.github/workflows/enrich-metadata.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-lambda.yml
+    secrets: inherit
+    with:
+      function_name: network-monitor-enrich-metadata
+      lambda_dir: lambdas/enrich_metadata

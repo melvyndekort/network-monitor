@@ -1,0 +1,51 @@
+name: Deploy Lambda
+
+on:
+  workflow_call:
+    inputs:
+      function_name:
+        required: true
+        type: string
+      lambda_dir:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - run: uv python install
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: uv sync --all-extras
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: uv run pytest
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: |
+          cd ${{ inputs.lambda_dir }}
+          uv export --no-dev --no-hashes -o requirements.txt
+          pip install -r requirements.txt -t package/
+          cp handler.py package/
+          cd package && zip -r ../lambda.zip .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.function_name }}
+          path: ${{ inputs.lambda_dir }}/lambda.zip
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.function_name }}
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: eu-west-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+      - run: aws lambda update-function-code --function-name ${{ inputs.function_name }} --zip-file fileb://lambda.zip
