@@ -21,7 +21,7 @@ resource "aws_lambda_function" "event_router" {
   }
 
   lifecycle {
-    ignore_changes = [filename]
+    ignore_changes = [filename, source_code_hash]
   }
 }
 
@@ -50,7 +50,7 @@ resource "aws_lambda_function" "track_presence" {
   }
 
   lifecycle {
-    ignore_changes = [filename]
+    ignore_changes = [filename, source_code_hash]
   }
 }
 
@@ -79,7 +79,7 @@ resource "aws_lambda_function" "send_notifications" {
   }
 
   lifecycle {
-    ignore_changes = [filename]
+    ignore_changes = [filename, source_code_hash]
   }
 }
 
@@ -106,7 +106,7 @@ resource "aws_lambda_function" "enrich_metadata" {
   }
 
   lifecycle {
-    ignore_changes = [filename]
+    ignore_changes = [filename, source_code_hash]
   }
 }
 

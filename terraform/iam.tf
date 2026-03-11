@@ -25,7 +25,7 @@ resource "aws_iam_role_policy" "event_router" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Action"
+        Effect = "Allow"
         Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
