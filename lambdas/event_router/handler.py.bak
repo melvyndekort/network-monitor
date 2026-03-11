@@ -1,0 +1,92 @@
+"""Event router Lambda - Normalize and route events."""
+import json
+import os
+import time
+from datetime import datetime
+
+import sys
+sys.path.insert(0, '/opt/python')
+
+from shared import dynamodb, sns
+
+
+TOPIC_DISCOVERED = os.environ['TOPIC_DISCOVERED']
+TOPIC_ACTIVITY = os.environ['TOPIC_ACTIVITY']
+
+
+def handler(event, context):
+    """Process events from SQS and route to appropriate SNS topics."""
+    for record in event['Records']:
+        body = json.loads(record['body'])
+        
+        # Normalize event
+        normalized = normalize_event(body)
+        if not normalized:
+            continue
+        
+        # Check deduplication
+        dedup_key = f"{normalized['mac']}#{normalized['event_type']}#{int(time.time() // 30)}"
+        if dynamodb.check_dedup(dedup_key):
+            continue
+        dynamodb.set_dedup(dedup_key)
+        
+        # Store event
+        dynamodb.put_event(
+            mac=normalized['mac'],
+            timestamp=int(normalized['timestamp'].timestamp() * 1000),
+            event_type=normalized['event_type'],
+            ip=normalized.get('ip'),
+            vlan=normalized.get('vlan'),
+            metadata=normalized.get('metadata', {})
+        )
+        
+        # Update device last_seen
+        device = dynamodb.get_device(normalized['mac'])
+        if device:
+            dynamodb.update_device(normalized['mac'], {
+                'last_seen': int(time.time()),
+                'last_ip': normalized.get('ip') or device.get('last_ip'),
+                'last_vlan': normalized.get('vlan') or device.get('last_vlan')
+            })
+        else:
+            # New device
+            dynamodb.put_device(
+                mac=normalized['mac'],
+                name=None,
+                manufacturer=None,
+                hostname=normalized.get('hostname'),
+                device_type=None,
+                last_ip=normalized.get('ip'),
+                last_vlan=normalized.get('vlan'),
+                current_state='unknown',
+                notify=True,
+                first_seen=int(time.time()),
+                last_seen=int(time.time()),
+                metadata={}
+            )
+        
+        # Route to appropriate topic
+        if normalized['event_type'] == 'device_discovered':
+            sns.publish_event(TOPIC_DISCOVERED, normalized)
+        else:
+            sns.publish_event(TOPIC_ACTIVITY, normalized)
+    
+    return {'statusCode': 200}
+
+
+def normalize_event(body: dict) -> dict:
+    """Normalize event from Vector."""
+    try:
+        return {
+            'timestamp': datetime.fromisoformat(body['timestamp'].replace('Z', '+00:00')),
+            'source': body['source'],
+            'event_type': body['event_type'],
+            'mac': body['mac'].upper(),
+            'ip': body.get('ip'),
+            'hostname': body.get('hostname'),
+            'vlan': body.get('vlan'),
+            'metadata': body.get('metadata', {})
+        }
+    except (KeyError, ValueError) as e:
+        print(f"Failed to normalize event: {e}")
+        return None
