@@ -4,13 +4,13 @@ import os
 import time
 import boto3
 
-# DynamoDB setup
+# DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
-devices_table = dynamodb.Table(os.environ['DEVICES_TABLE'])
+devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 
 # SNS setup
 sns = boto3.client('sns')
-TOPIC_STATE_CHANGED = os.environ['TOPIC_STATE_CHANGED']
+TOPIC_STATE_CHANGED = os.environ.get('TOPIC_STATE_CHANGED', '')
 
 OFFLINE_THRESHOLD = 900  # 15 minutes
 

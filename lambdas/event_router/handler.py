@@ -5,16 +5,16 @@ import time
 from datetime import datetime
 import boto3
 
-# DynamoDB setup
+# DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
-devices_table = dynamodb.Table(os.environ['DEVICES_TABLE'])
-events_table = dynamodb.Table(os.environ['EVENTS_TABLE'])
-dedup_table = dynamodb.Table(os.environ['DEDUP_TABLE'])
+devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
+events_table = dynamodb.Table(os.environ.get('EVENTS_TABLE', ''))
+dedup_table = dynamodb.Table(os.environ.get('DEDUP_TABLE', ''))
 
 # SNS setup
 sns = boto3.client('sns')
-TOPIC_DISCOVERED = os.environ['TOPIC_DISCOVERED']
-TOPIC_ACTIVITY = os.environ['TOPIC_ACTIVITY']
+TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
+TOPIC_ACTIVITY = os.environ.get('TOPIC_ACTIVITY', '')
 
 
 def handler(event, context):
