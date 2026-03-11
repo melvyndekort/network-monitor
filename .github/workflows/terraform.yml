@@ -42,6 +42,7 @@ jobs:
           role-to-assume: arn:aws:iam::844347863910:role/AdminRole
           aws-region: eu-west-1
           role-chaining: true
+          role-skip-session-tagging: true
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
