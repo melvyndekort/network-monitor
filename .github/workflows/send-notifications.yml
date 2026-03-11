@@ -6,7 +6,12 @@ on:
     paths:
       - 'lambdas/send_notifications/**'
       - '.github/workflows/send-notifications.yml'
+      - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:

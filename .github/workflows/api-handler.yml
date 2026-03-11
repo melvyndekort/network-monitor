@@ -6,7 +6,12 @@ on:
     paths:
       - 'lambdas/api_handler/**'
       - '.github/workflows/api-handler.yml'
+      - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:

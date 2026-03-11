@@ -6,7 +6,12 @@ on:
     paths:
       - 'lambdas/event_router/**'
       - '.github/workflows/event-router.yml'
+      - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
