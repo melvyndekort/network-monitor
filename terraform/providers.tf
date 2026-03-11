@@ -9,18 +9,18 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "mdekort-tfstate"
-    key            = "network-monitor.tfstate"
-    region         = "eu-west-1"
-    encrypt        = true
-    dynamodb_table = "terraform-state-lock"
+    bucket  = "mdekort.tfstate"
+    key     = "network-monitor.tfstate"
+    region  = "eu-west-1"
+    encrypt = true
+    # Backend uses default credentials (org account)
+    # Provider below assumes role into network-monitor account
   }
 }
 
 provider "aws" {
   region = var.aws_region
 
-  # Will assume role into network-monitor account
   assume_role {
     role_arn = "arn:aws:iam::${var.account_id}:role/OrganizationAccountAccessRole"
   }
