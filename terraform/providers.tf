@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "mdekort-network-monitor-tfstate"
+    bucket       = "mdekort-tfstate-844347863910"
     key          = "network-monitor.tfstate"
     region       = "eu-west-1"
     encrypt      = true
