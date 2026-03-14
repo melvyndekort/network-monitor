@@ -36,14 +36,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-1
 
-      - name: Assume Subaccount Role
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::844347863910:role/AdminRole
-          aws-region: eu-west-1
-          role-chaining: true
-          role-skip-session-tagging: true
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
 
