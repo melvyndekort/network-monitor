@@ -18,11 +18,11 @@
 
 ## What's Left
 
-### Terraform: FIFO Queue DLQ
-The `device_events` FIFO queue has a DLQ defined (`device_events_dlq`) but no `redrive_policy` attached to the main queue. The fan-out queues (presence-tracker, notifier, metadata-enricher) all have redrive policies — this one was missed.
+### ~~Terraform: FIFO Queue DLQ~~
+~~The `device_events` FIFO queue has a DLQ defined (`device_events_dlq`) but no `redrive_policy` attached to the main queue. The fan-out queues (presence-tracker, notifier, metadata-enricher) all have redrive policies — this one was missed.~~ ✅ Fixed
 
-### Apprise URL
-The `send-notifications` Lambda has `APPRISE_URL` set to `apprise.internal.mdekort.nl`, which is not resolvable from AWS Lambda. Needs to be changed to the public Cloudflare Tunnel URL (`apprise.mdekort.nl` or similar).
+### ~~Apprise URL~~
+~~The `send-notifications` Lambda has `APPRISE_URL` set to `apprise.internal.mdekort.nl`, which is not resolvable from AWS Lambda. Needs to be changed to the public Cloudflare Tunnel URL (`apprise.mdekort.nl` or similar).~~ ✅ Fixed — changed to `https://apprise.mdekort.nl`
 
 ### Terraform: S3 Bucket for UI
 Need `s3.tf` with:
@@ -147,8 +147,8 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 
 - ~~API Gateway terraform~~ ✅ Done
 - ~~IAM fix for event-router~~ ✅ Done
-- FIFO queue DLQ fix (small, important)
-- Apprise URL fix (small, important)
+- ~~FIFO queue DLQ fix~~ ✅ Done
+- ~~Apprise URL fix~~ ✅ Done
 - Data collector (the event source)
 - Vector config changes + AWS credentials (bridges on-prem to AWS)
 - S3 + UI
