@@ -39,17 +39,13 @@ Removed container, dropped MariaDB database and user.
 ### ~~UI~~ ✅ Done
 Bootstrap 5 dark theme dashboard at `http://network-monitor-ui-844347863910.s3-website-eu-west-1.amazonaws.com`. GET routes made public, PUT/DELETE remain IAM-protected. CORS enabled.
 
-### Documentation
-- `docs/api.md` — empty
-- `docs/event-types.md` — empty
-- `docs/grafana-setup.md` — missing
+### ~~Documentation~~ ✅ Done
+- `docs/api.md` — API reference with all endpoints
+- `docs/event-types.md` — Event schema, types, state machine, routing
+- `docs/grafana-setup.md` — Grafana Cloud setup with Infinity plugin
 
-### Scripts
-`scripts/` directory is empty. README references:
-- `deploy_lambdas.sh`
-- `package_lambdas.sh`
-
-(May not be needed since CI/CD handles deployment via GitHub Actions)
+### ~~Scripts~~ ✅ Done
+`scripts/deploy_ui.sh` for S3 sync. Lambda deployment handled by CI/CD.
 
 ### Grafana Dashboards
 `examples/grafana-dashboards/` is empty. Need dashboard JSON for:
@@ -75,4 +71,5 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 - ~~Vector config changes + AWS credentials~~ ✅ Done
 - ~~S3 + UI~~ ✅ Done
 - ~~Retire router-events~~ ✅ Done
-- Everything else (docs, dashboards, scripts)
+- ~~Docs + scripts~~ ✅ Done
+- Everything else (Grafana dashboards, shared Lambda libs, central test dirs)
