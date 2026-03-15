@@ -38,8 +38,17 @@ Implemented as `data_collector` Python package with uv/hatchling:
 - 24 tests, 86% coverage, pylint 9.91/10
 - Multi-stage Dockerfile, connects to MikroTik at 10.204.50.1 (management VLAN)
 
-### Vector Config Changes (on compute-1)
-**Important:** No new Vector container. Modify the existing config at `/var/srv/apps/vector/vector.toml` on compute-1. Vector runs in the `monitoring.yml` docker-compose stack (homelab repo: `~/src/melvyndekort/homelab/compute-1/monitoring.yml`).
+### ~~Vector Config Changes (on compute-1)~~ ✅ Done
+Deployed new `vector.toml` with:
+- `docker_logs` source (for data-collector container stdout)
+- `dhcp_to_event` transform (converts DHCP syslog to event schema)
+- `parse_collector` transform (parses data-collector JSON)
+- `dedupe` transform (30s window, keyed on mac + event_type)
+- `aws_sqs` sink (sends to FIFO queue, message_group_id = mac)
+- Loki sink preserved, password moved to env var
+- Docker socket mount + SELinux `label=disable` in compose
+- IAM user `network-monitor-vector` with `sqs:SendMessage` + `sqs:GetQueueAttributes`
+- AWS credentials encrypted via SOPS into `compute-1-monitoring.enc.env`
 
 #### Current config
 - Source: `syslog` on UDP 514 (receives RouterOS logs)
@@ -147,7 +156,7 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 - ~~FIFO queue DLQ fix~~ ✅ Done
 - ~~Apprise URL fix~~ ✅ Done
 - ~~Data collector~~ ✅ Done
-- Vector config changes + AWS credentials (bridges on-prem to AWS)
+- ~~Vector config changes + AWS credentials~~ ✅ Done
 - S3 + UI
 - Retire router-events
 - Everything else (docs, dashboards, scripts)
