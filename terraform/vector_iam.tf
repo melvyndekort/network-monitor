@@ -17,7 +17,7 @@ resource "aws_iam_user_policy" "vector" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = "sqs:SendMessage"
+      Action   = ["sqs:SendMessage", "sqs:GetQueueAttributes"]
       Resource = aws_sqs_queue.device_events.arn
     }]
   })

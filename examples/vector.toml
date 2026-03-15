@@ -47,7 +47,7 @@ event_type = if parsed.action == "assigned" { "dhcp_assigned" } else { "dhcp_rel
   "timestamp": to_string(now()),
   "source": "syslog_dhcp",
   "event_type": event_type,
-  "mac": upcase!(parsed.mac),
+  "mac": upcase(parsed.mac),
   "ip": parsed.ip,
   "hostname": null,
   "vlan": vlan,
@@ -86,8 +86,6 @@ queue_url = "${SQS_QUEUE_URL}"
 region = "${AWS_REGION}"
 encoding.codec = "json"
 message_group_id = "{{ mac }}"
-auth.access_key_id = "${AWS_ACCESS_KEY_ID}"
-auth.secret_access_key = "${AWS_SECRET_ACCESS_KEY}"
 
 # Keep sending all syslog to Loki
 [sinks.loki]
