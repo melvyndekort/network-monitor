@@ -24,100 +24,20 @@
 ### ~~Apprise URL~~
 ~~The `send-notifications` Lambda has `APPRISE_URL` set to `apprise.internal.mdekort.nl`, which is not resolvable from AWS Lambda. Needs to be changed to the public Cloudflare Tunnel URL (`apprise.mdekort.nl` or similar).~~ ✅ Fixed — changed to `https://apprise.mdekort.nl`
 
-### Terraform: S3 Bucket for UI
-Need `s3.tf` with:
-- S3 bucket for static HTMX UI
-- Static website hosting config
-- Bucket policy for public read (or CloudFront)
+### ~~Terraform: S3 Bucket for UI~~ ✅ Done
+S3 bucket with static website hosting and public read policy.
 
 ### ~~Data Collector~~ ✅ Done
-Implemented as `data_collector` Python package with uv/hatchling:
-- `mikrotik.py` — librouteros wrapper for ARP + DHCP queries with auto-reconnect
-- `models.py` — Event schema matching event-router Lambda, VLAN detection from IP prefix
-- `main.py` — Poll loop (default 30s), outputs JSON to stdout
-- 24 tests, 86% coverage, pylint 9.91/10
-- Multi-stage Dockerfile, connects to MikroTik at 10.204.50.1 (management VLAN)
+Implemented as `data_collector` Python package with uv/hatchling. 24 tests, 86% coverage.
 
 ### ~~Vector Config Changes (on compute-1)~~ ✅ Done
-Deployed new `vector.toml` with:
-- `docker_logs` source (for data-collector container stdout)
-- `dhcp_to_event` transform (converts DHCP syslog to event schema)
-- `parse_collector` transform (parses data-collector JSON)
-- `dedupe` transform (30s window, keyed on mac + event_type)
-- `aws_sqs` sink (sends to FIFO queue, message_group_id = mac)
-- Loki sink preserved, password moved to env var
-- Docker socket mount + SELinux `label=disable` in compose
-- IAM user `network-monitor-vector` with `sqs:SendMessage` + `sqs:GetQueueAttributes`
-- AWS credentials encrypted via SOPS into `compute-1-monitoring.enc.env`
-
-#### Current config
-- Source: `syslog` on UDP 514 (receives RouterOS logs)
-- Transform: `fix_timestamp` (sets timestamp to now())
-- Transform: `dhcp_filter` (filters for appname containing "dhcp")
-- Sink: `router_events` — HTTP POST to `http://10.204.10.21:13959/api/events` (old app, being replaced)
-- Sink: `loki` — sends all syslog to Grafana Cloud Loki
-
-#### Changes needed
-1. **Remove** the `router_events` HTTP sink (replaced by this project)
-2. **Add** a `docker_logs` source to capture data collector container stdout
-3. **Add** a transform to parse data collector JSON output
-4. **Add** a transform to convert DHCP syslog events into our normalized event schema
-5. **Add** a dedupe transform (30s window, keyed on mac + event_type)
-6. **Add** an `aws_sqs` sink targeting `https://sqs.eu-west-1.amazonaws.com/844347863910/network-monitor-device-events.fifo`, using `message_group_id = "{{ mac }}"`
-7. **Keep** the `loki` sink as-is
-8. **Add** AWS credentials — Vector container currently has none (see Secrets section below)
-
-#### Docker-compose changes (homelab repo)
-The Vector service in `compute-1/monitoring.yml` will need:
-- `env_file` referencing the secrets file (see Secrets section below)
-- Docker socket volume mount if using `docker_logs` source — Vector currently has no socket mount
-- The config file is already bind-mounted read-only from `/var/srv/apps/vector/vector.toml`
-
-**⚠️ Do NOT apply Vector changes until AWS infrastructure is fully deployed and tested.**
-
-#### Secrets for Vector AWS credentials
-The homelab uses SOPS + age encrypted env files for secrets. The flow is:
-
-1. Encrypted secrets live in Git at `homelab/secrets/{node}-{stack}.enc.env`
-2. On push, GitHub Actions triggers the `secrets-sync` container on compute-1
-3. secrets-sync clones the repo, decrypts all `*.enc.env` files, writes plaintext to `/var/srv/secrets/{node}-{stack}.env` (root-only, 600 perms)
-4. Compose services reference secrets via `env_file: /var/srv/secrets/{node}-{stack}.env`
-5. Portainer reads these files from compute-1's filesystem when deploying stacks
-
-**What needs to happen:**
-
-1. Create a dedicated IAM user (or use existing Terraform) with only `sqs:SendMessage` on the FIFO queue
-2. Create a new plaintext env file with the AWS credentials:
-   ```
-   AWS_ACCESS_KEY_ID=<key>
-   AWS_SECRET_ACCESS_KEY=<secret>
-   AWS_REGION=eu-west-1
-   SQS_QUEUE_URL=https://sqs.eu-west-1.amazonaws.com/844347863910/network-monitor-device-events.fifo
-   ```
-3. Encrypt it into the homelab repo:
-   ```bash
-   cd ~/src/melvyndekort/homelab
-   make secrets-encrypt INPUT=plaintext.env FILE=compute-1-monitoring.enc.env
-   ```
-   Note: Vector is in the `monitoring.yml` stack, so either:
-   - Add the new vars to the existing `compute-1-monitoring.enc.env`, or
-   - Create a separate `compute-1-network-monitor.enc.env` and add a second `env_file` to the Vector service
-4. Add `env_file` to the Vector service in `compute-1/monitoring.yml`:
-   ```yaml
-   vector:
-     env_file:
-       - /var/srv/secrets/compute-1-monitoring.env
-   ```
-5. Commit and push — secrets-sync auto-decrypts, Portainer webhook redeploys the monitoring stack
+Deployed new `vector.toml` with docker_logs source, DHCP transform, SQS sink, dedupe. IAM user + SOPS-encrypted credentials.
 
 ### ~~Retire router-events~~ ✅ Done
-Removed `router-events` container from `compute-1/infrastructure.yml`, dropped the `router_events` MariaDB database and user.
+Removed container, dropped MariaDB database and user.
 
-### UI
-All files under `ui/` are empty:
-- `index.html` — empty
-- `devices.html` — missing
-- `styles.css` — missing
+### ~~UI~~ ✅ Done
+Bootstrap 5 dark theme dashboard at `http://network-monitor-ui-844347863910.s3-website-eu-west-1.amazonaws.com`. GET routes made public, PUT/DELETE remain IAM-protected. CORS enabled.
 
 ### Documentation
 - `docs/api.md` — empty
@@ -153,6 +73,6 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 - ~~Apprise URL fix~~ ✅ Done
 - ~~Data collector~~ ✅ Done
 - ~~Vector config changes + AWS credentials~~ ✅ Done
-- S3 + UI
+- ~~S3 + UI~~ ✅ Done
 - ~~Retire router-events~~ ✅ Done
 - Everything else (docs, dashboards, scripts)
