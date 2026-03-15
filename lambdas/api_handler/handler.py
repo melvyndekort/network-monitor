@@ -1,7 +1,16 @@
 """API handler Lambda - REST API for device management."""
 import json
 import os
+from decimal import Decimal
 import boto3
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Handle DynamoDB Decimal types."""
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return int(o) if o == int(o) else float(o)
+        return super().default(o)
 
 # DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
@@ -26,7 +35,7 @@ def handler(event, context):
         mac = path.split('/')[-1]
         return delete_device(mac)
     
-    return {'statusCode': 404, 'body': json.dumps({'error': 'Not found'})}
+    return {'statusCode': 404, 'body': json.dumps({'error': 'Not found'}, cls=DecimalEncoder)}
 
 
 def list_devices():
@@ -34,7 +43,7 @@ def list_devices():
     response = devices_table.scan()
     return {
         'statusCode': 200,
-        'body': json.dumps({'devices': response['Items']})
+        'body': json.dumps({'devices': response['Items']}, cls=DecimalEncoder)
     }
 
 
@@ -44,16 +53,16 @@ def get_device(mac):
     device = response.get('Item')
     
     if not device:
-        return {'statusCode': 404, 'body': json.dumps({'error': 'Device not found'})}
+        return {'statusCode': 404, 'body': json.dumps({'error': 'Device not found'}, cls=DecimalEncoder)}
     
-    return {'statusCode': 200, 'body': json.dumps(device)}
+    return {'statusCode': 200, 'body': json.dumps(device, cls=DecimalEncoder)}
 
 
 def update_device(mac, updates):
     """Update device."""
     response = devices_table.get_item(Key={'mac': mac})
     if 'Item' not in response:
-        return {'statusCode': 404, 'body': json.dumps({'error': 'Device not found'})}
+        return {'statusCode': 404, 'body': json.dumps({'error': 'Device not found'}, cls=DecimalEncoder)}
     
     allowed = {'name', 'notify', 'device_type'}
     filtered = {k: v for k, v in updates.items() if k in allowed}
@@ -70,10 +79,10 @@ def update_device(mac, updates):
             ExpressionAttributeValues=expr_values
         )
     
-    return {'statusCode': 200, 'body': json.dumps({'status': 'updated'})}
+    return {'statusCode': 200, 'body': json.dumps({'status': 'updated'}, cls=DecimalEncoder)}
 
 
 def delete_device(mac):
     """Delete device."""
     devices_table.delete_item(Key={'mac': mac})
-    return {'statusCode': 200, 'body': json.dumps({'status': 'deleted'})}
+    return {'statusCode': 200, 'body': json.dumps({'status': 'deleted'}, cls=DecimalEncoder)}

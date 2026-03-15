@@ -23,6 +23,13 @@
 resource "aws_apigatewayv2_api" "network_monitor" {
   name          = "network-monitor"
   protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET"]
+    allow_headers = ["Content-Type"]
+    max_age       = 3600
+  }
 }
 
 resource "aws_apigatewayv2_stage" "default" {
@@ -40,17 +47,15 @@ resource "aws_apigatewayv2_integration" "api_handler" {
 
 # Routes - all protected with IAM auth
 resource "aws_apigatewayv2_route" "list_devices" {
-  api_id             = aws_apigatewayv2_api.network_monitor.id
-  route_key          = "GET /devices"
-  target             = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
-  authorization_type = "AWS_IAM"
+  api_id    = aws_apigatewayv2_api.network_monitor.id
+  route_key = "GET /devices"
+  target    = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_device" {
-  api_id             = aws_apigatewayv2_api.network_monitor.id
-  route_key          = "GET /devices/{mac}"
-  target             = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
-  authorization_type = "AWS_IAM"
+  api_id    = aws_apigatewayv2_api.network_monitor.id
+  route_key = "GET /devices/{mac}"
+  target    = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
 }
 
 resource "aws_apigatewayv2_route" "update_device" {
@@ -68,24 +73,21 @@ resource "aws_apigatewayv2_route" "delete_device" {
 }
 
 resource "aws_apigatewayv2_route" "get_stats" {
-  api_id             = aws_apigatewayv2_api.network_monitor.id
-  route_key          = "GET /stats"
-  target             = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
-  authorization_type = "AWS_IAM"
+  api_id    = aws_apigatewayv2_api.network_monitor.id
+  route_key = "GET /stats"
+  target    = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_vlan_stats" {
-  api_id             = aws_apigatewayv2_api.network_monitor.id
-  route_key          = "GET /stats/vlan/{vlan_id}"
-  target             = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
-  authorization_type = "AWS_IAM"
+  api_id    = aws_apigatewayv2_api.network_monitor.id
+  route_key = "GET /stats/vlan/{vlan_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
 }
 
 resource "aws_apigatewayv2_route" "get_device_history" {
-  api_id             = aws_apigatewayv2_api.network_monitor.id
-  route_key          = "GET /devices/{mac}/history"
-  target             = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
-  authorization_type = "AWS_IAM"
+  api_id    = aws_apigatewayv2_api.network_monitor.id
+  route_key = "GET /devices/{mac}/history"
+  target    = "integrations/${aws_apigatewayv2_integration.api_handler.id}"
 }
 
 resource "aws_lambda_permission" "api_gateway" {

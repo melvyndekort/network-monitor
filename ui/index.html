@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+    <title>Network Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .manufacturer { color: #adb5bd; font-size: 0.9em; }
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { background: #495057; }
+        th.sortable::after { content: ' ⇅'; opacity: 0.3; }
+        th.sortable.asc::after { content: ' ↑'; opacity: 1; }
+        th.sortable.desc::after { content: ' ↓'; opacity: 1; }
+        .status-online { color: #198754; }
+        .status-offline { color: #dc3545; }
+        .status-unknown { color: #6c757d; }
+        .vlan-badge { font-size: 0.8em; }
+        #stats span { font-size: 1.4em; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <h1 class="mb-4">Network Monitor</h1>
+
+        <div id="stats" class="row mb-4">
+            <div class="col-md-3"><div class="card text-center p-3"><span id="totalDevices">-</span><br>Total Devices</div></div>
+            <div class="col-md-3"><div class="card text-center p-3"><span id="onlineDevices" class="text-success">-</span><br>Online</div></div>
+            <div class="col-md-3"><div class="card text-center p-3"><span id="offlineDevices" class="text-danger">-</span><br>Offline</div></div>
+            <div class="col-md-3"><div class="card text-center p-3"><span id="vlans">-</span><br>VLANs</div></div>
+        </div>
+
+        <div class="mb-3">
+            <input type="text" id="search" class="form-control" placeholder="Search by name, MAC, IP, manufacturer...">
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="sortable" data-sort="current_state">Status</th>
+                        <th class="sortable" data-sort="name">Name</th>
+                        <th class="sortable" data-sort="mac">MAC</th>
+                        <th class="sortable" data-sort="last_ip">IP</th>
+                        <th class="sortable" data-sort="manufacturer">Manufacturer</th>
+                        <th class="sortable" data-sort="last_vlan">VLAN</th>
+                        <th class="sortable" data-sort="hostname">Hostname</th>
+                        <th class="sortable" data-sort="last_seen">Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody id="deviceRows"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API = 'https://ys7ivwcdqf.execute-api.eu-west-1.amazonaws.com';
+        let devices = [];
+        let sortCol = 'last_seen';
+        let sortDir = 'desc';
+
+        const vlanNames = {10: 'Data', 20: 'IoT', 30: 'Guest', 40: 'VPN', 50: 'Mgmt'};
+        const vlanColors = {10: 'primary', 20: 'info', 30: 'warning', 40: 'secondary', 50: 'danger'};
+
+        function timeAgo(ts) {
+            if (!ts) return '-';
+            const s = Math.floor(Date.now() / 1000) - ts;
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+            return Math.floor(s / 86400) + 'd ago';
+        }
+
+        function render() {
+            const q = document.getElementById('search').value.toLowerCase();
+            let filtered = devices.filter(d => {
+                const hay = [d.mac, d.name, d.last_ip, d.manufacturer, d.hostname].filter(Boolean).join(' ').toLowerCase();
+                return hay.includes(q);
+            });
+
+            filtered.sort((a, b) => {
+                let av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
+                if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
+                return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+            });
+
+            const online = devices.filter(d => d.current_state === 'online').length;
+            const vlans = [...new Set(devices.map(d => d.last_vlan).filter(Boolean))].length;
+            document.getElementById('totalDevices').textContent = devices.length;
+            document.getElementById('onlineDevices').textContent = online;
+            document.getElementById('offlineDevices').textContent = devices.length - online;
+            document.getElementById('vlans').textContent = vlans;
+
+            const tbody = document.getElementById('deviceRows');
+            tbody.innerHTML = filtered.map(d => {
+                const stClass = d.current_state === 'online' ? 'status-online' : d.current_state === 'offline' ? 'status-offline' : 'status-unknown';
+                const stIcon = d.current_state === 'online' ? '●' : '○';
+                const vlan = d.last_vlan ? `<span class="badge bg-${vlanColors[d.last_vlan] || 'secondary'} vlan-badge">${d.last_vlan} ${vlanNames[d.last_vlan] || ''}</span>` : '-';
+                return `<tr>
+                    <td class="${stClass}">${stIcon} ${d.current_state || 'unknown'}</td>
+                    <td>${d.name || '<span class="text-muted">-</span>'}</td>
+                    <td><code>${d.mac}</code></td>
+                    <td>${d.last_ip || '-'}</td>
+                    <td class="manufacturer">${d.manufacturer || '-'}</td>
+                    <td>${vlan}</td>
+                    <td>${d.hostname || '-'}</td>
+                    <td>${timeAgo(d.last_seen)}</td>
+                </tr>`;
+            }).join('');
+
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.classList.remove('asc', 'desc');
+                if (th.dataset.sort === sortCol) th.classList.add(sortDir);
+            });
+        }
+
+        document.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const col = th.dataset.sort;
+                if (sortCol === col) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; }
+                else { sortCol = col; sortDir = 'asc'; }
+                render();
+            });
+        });
+
+        document.getElementById('search').addEventListener('input', render);
+
+        async function load() {
+            const res = await fetch(API + '/devices');
+            const data = await res.json();
+            devices = data.devices || [];
+            render();
+        }
+
+        load();
+        setInterval(load, 30000);
+    </script>
+</body>
+</html>

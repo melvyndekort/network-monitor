@@ -29,3 +29,8 @@ output "vector_aws_secret" {
   value       = aws_iam_access_key.vector.secret
   sensitive   = true
 }
+
+output "ui_website_url" {
+  description = "S3 static website URL for UI"
+  value       = aws_s3_bucket_website_configuration.ui.website_endpoint
+}
