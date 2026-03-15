@@ -36,10 +36,15 @@ resource "aws_iam_role_policy" "event_router" {
       {
         Effect = "Allow"
         Action = [
+          "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem"
         ]
-        Resource = aws_dynamodb_table.device_events.arn
+        Resource = [
+          aws_dynamodb_table.devices.arn,
+          aws_dynamodb_table.device_events.arn,
+          aws_dynamodb_table.deduplication.arn
+        ]
       },
       {
         Effect = "Allow"
