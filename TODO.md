@@ -11,6 +11,8 @@
   - Tested: unsigned → 403, signed → 200 with `{"devices": []}`
 - **Lambda code**: All 5 handlers implemented with unit tests (event-router, track-presence, send-notifications, enrich-metadata, api-handler)
 - **CI/CD**: Reusable deploy-lambda workflow, per-Lambda trigger workflows, Terraform plan/apply workflow
+- **IAM fix** (deployed 2026-03-15): event-router was missing DynamoDB permissions for `devices` and `deduplication` tables (only had `device_events`). Fixed and verified with end-to-end test.
+- **End-to-end pipeline test** (2026-03-15): Sent manual `device_discovered` event to SQS → all 5 Lambdas fired successfully. Event-router stored event + created device, track-presence set state to online, enrich-metadata looked up manufacturer, send-notifications attempted Apprise (see known issue below).
 
 ---
 
@@ -18,6 +20,9 @@
 
 ### Terraform: FIFO Queue DLQ
 The `device_events` FIFO queue has a DLQ defined (`device_events_dlq`) but no `redrive_policy` attached to the main queue. The fan-out queues (presence-tracker, notifier, metadata-enricher) all have redrive policies — this one was missed.
+
+### Apprise URL
+The `send-notifications` Lambda has `APPRISE_URL` set to `apprise.internal.mdekort.nl`, which is not resolvable from AWS Lambda. Needs to be changed to the public Cloudflare Tunnel URL (`apprise.mdekort.nl` or similar).
 
 ### Terraform: S3 Bucket for UI
 Need `s3.tf` with:
@@ -141,7 +146,9 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 ## Suggested Order
 
 - ~~API Gateway terraform~~ ✅ Done
+- ~~IAM fix for event-router~~ ✅ Done
 - FIFO queue DLQ fix (small, important)
+- Apprise URL fix (small, important)
 - Data collector (the event source)
 - Vector config changes + AWS credentials (bridges on-prem to AWS)
 - S3 + UI
