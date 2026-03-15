@@ -8,6 +8,11 @@ resource "aws_sqs_queue" "device_events" {
   message_retention_seconds   = 1209600 # 14 days
   visibility_timeout_seconds  = 60
 
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.device_events_dlq.arn
+    maxReceiveCount     = 3
+  })
+
   tags = {
     Name = "network-monitor-device-events"
   }
