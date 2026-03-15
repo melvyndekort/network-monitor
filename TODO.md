@@ -110,12 +110,8 @@ The homelab uses SOPS + age encrypted env files for secrets. The flow is:
    ```
 5. Commit and push — secrets-sync auto-decrypts, Portainer webhook redeploys the monitoring stack
 
-### Retire router-events
-Once the network monitor is live:
-- Remove `router-events` container from `~/src/melvyndekort/homelab/compute-1/infrastructure.yml`
-- Remove its MariaDB database (`router_events`)
-- Update Cloudflare tunnel config if `router-events.mdekort.nl` is exposed
-- Update Traefik labels
+### ~~Retire router-events~~ ✅ Done
+Removed `router-events` container from `compute-1/infrastructure.yml`, dropped the `router_events` MariaDB database and user.
 
 ### UI
 All files under `ui/` are empty:
@@ -158,5 +154,5 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 - ~~Data collector~~ ✅ Done
 - ~~Vector config changes + AWS credentials~~ ✅ Done
 - S3 + UI
-- Retire router-events
+- ~~Retire router-events~~ ✅ Done
 - Everything else (docs, dashboards, scripts)
