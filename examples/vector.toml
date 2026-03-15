@@ -1,0 +1,105 @@
+[api]
+  enabled = true
+  address = "0.0.0.0:8686"
+
+# Syslog from RouterOS
+[sources.syslog]
+type = "syslog"
+address = "0.0.0.0:514"
+mode = "udp"
+
+# Docker logs from data-collector container
+[sources.docker_logs]
+type = "docker_logs"
+include_containers = ["data-collector"]
+
+# Fix syslog timestamp
+[transforms.fix_timestamp]
+type = "remap"
+inputs = ["syslog"]
+source = '''
+.timestamp = now()
+'''
+
+# Filter DHCP events from syslog
+[transforms.dhcp_filter]
+type = "filter"
+inputs = ["fix_timestamp"]
+condition = 'contains!(.appname, "dhcp")'
+
+# Convert DHCP syslog events to our event schema
+[transforms.dhcp_to_event]
+type = "remap"
+inputs = ["dhcp_filter"]
+source = '''
+parsed = parse_regex!(.message, r'(?P<action>\w+) (?P<ip>[\d.]+) for (?P<mac>[0-9A-Fa-f:]+)')
+
+vlan = null
+if starts_with(parsed.ip, "10.204.10.") { vlan = 10 }
+if starts_with(parsed.ip, "10.204.20.") { vlan = 20 }
+if starts_with(parsed.ip, "10.204.30.") { vlan = 30 }
+if starts_with(parsed.ip, "10.204.40.") { vlan = 40 }
+if starts_with(parsed.ip, "10.204.50.") { vlan = 50 }
+
+event_type = if parsed.action == "assigned" { "dhcp_assigned" } else { "dhcp_released" }
+
+. = {
+  "timestamp": to_string(now()),
+  "source": "syslog_dhcp",
+  "event_type": event_type,
+  "mac": upcase!(parsed.mac),
+  "ip": parsed.ip,
+  "hostname": null,
+  "vlan": vlan,
+  "metadata": { "raw_message": .message }
+}
+'''
+
+# Parse data-collector JSON from docker logs
+[transforms.parse_collector]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+. = parse_json!(.message)
+'''
+
+# Merge both event streams
+[transforms.merge_events]
+type = "remap"
+inputs = ["dhcp_to_event", "parse_collector"]
+source = '''
+. = .
+'''
+
+# Deduplicate events (30s window, keyed on mac + event_type)
+[transforms.dedupe]
+type = "dedupe"
+inputs = ["merge_events"]
+fields.match = ["mac", "event_type"]
+cache.num_events = 5000
+
+# Send to AWS SQS
+[sinks.aws_sqs]
+type = "aws_sqs"
+inputs = ["dedupe"]
+queue_url = "${SQS_QUEUE_URL}"
+region = "${AWS_REGION}"
+encoding.codec = "json"
+message_group_id = "{{ mac }}"
+auth.access_key_id = "${AWS_ACCESS_KEY_ID}"
+auth.secret_access_key = "${AWS_SECRET_ACCESS_KEY}"
+
+# Keep sending all syslog to Loki
+[sinks.loki]
+type = "loki"
+inputs = ["fix_timestamp"]
+endpoint = "https://logs-prod-eu-west-0.grafana.net"
+encoding.codec = "json"
+auth.strategy = "basic"
+auth.user = "876553"
+auth.password = "${LOKI_PASSWORD}"
+
+[sinks.loki.labels]
+job = "vector-lmserver"
+device = "{{ .host }}"
+source = "syslog"

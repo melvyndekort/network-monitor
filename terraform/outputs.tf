@@ -17,3 +17,15 @@ output "dynamodb_tables" {
     deduplication         = aws_dynamodb_table.deduplication.name
   }
 }
+
+output "vector_aws_access_key_id" {
+  description = "AWS access key ID for Vector IAM user"
+  value       = aws_iam_access_key.vector.id
+  sensitive   = true
+}
+
+output "vector_aws_secret" {
+  description = "AWS secret access key for Vector IAM user"
+  value       = aws_iam_access_key.vector.secret
+  sensitive   = true
+}
