@@ -30,16 +30,13 @@ Need `s3.tf` with:
 - Static website hosting config
 - Bucket policy for public read (or CloudFront)
 
-### Data Collector
-Everything under `data-collector/` is empty. Need:
-- `collector/main.py` — Poll MikroTik ARP table every 30s, output JSON events to stdout
-- `collector/mikrotik.py` — librouteros wrapper for ARP, DHCP leases, wireless clients
-- `collector/models.py` — Event data models
-- `requirements.txt` — librouteros, etc.
-- `Dockerfile` — Python 3.12 container
-- `config.yaml` — MikroTik connection settings
-
-MikroTik router: 10.204.10.1 (RB4011iGS+, RouterOS 7.22)
+### ~~Data Collector~~ ✅ Done
+Implemented as `data_collector` Python package with uv/hatchling:
+- `mikrotik.py` — librouteros wrapper for ARP + DHCP queries with auto-reconnect
+- `models.py` — Event schema matching event-router Lambda, VLAN detection from IP prefix
+- `main.py` — Poll loop (default 30s), outputs JSON to stdout
+- 24 tests, 86% coverage, pylint 9.91/10
+- Multi-stage Dockerfile, connects to MikroTik at 10.204.50.1 (management VLAN)
 
 ### Vector Config Changes (on compute-1)
 **Important:** No new Vector container. Modify the existing config at `/var/srv/apps/vector/vector.toml` on compute-1. Vector runs in the `monitoring.yml` docker-compose stack (homelab repo: `~/src/melvyndekort/homelab/compute-1/monitoring.yml`).
@@ -149,7 +146,7 @@ README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Cur
 - ~~IAM fix for event-router~~ ✅ Done
 - ~~FIFO queue DLQ fix~~ ✅ Done
 - ~~Apprise URL fix~~ ✅ Done
-- Data collector (the event source)
+- ~~Data collector~~ ✅ Done
 - Vector config changes + AWS credentials (bridges on-prem to AWS)
 - S3 + UI
 - Retire router-events
