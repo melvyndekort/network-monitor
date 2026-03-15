@@ -76,7 +76,7 @@ def create_device(event):
     """Create new device."""
     devices_table.put_item(Item={
         'mac': event['mac'],
-        'name': None,
+        'name': event.get('hostname'),
         'manufacturer': None,
         'hostname': event.get('hostname'),
         'device_type': None,
