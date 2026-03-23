@@ -25,7 +25,7 @@ Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use th
 - URL: `/devices`
 - Parser: JSON
 - Root selector: `devices`
-- Columns: mac, name, manufacturer, last_ip, current_state, last_vlan, last_seen
+- Columns: mac, name, manufacturer, last_ip, current_state, last_vlan, last_seen, online_until
 
 ### VLAN Breakdown
 - One row per VLAN using `/devices` filtered by `last_vlan`

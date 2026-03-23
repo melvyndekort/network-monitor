@@ -45,39 +45,7 @@ resource "aws_sns_topic" "device_activity" {
   }
 }
 
-resource "aws_sns_topic" "device_state_changed" {
-  name = "network-monitor-device-state-changed"
-
-  tags = {
-    Name = "network-monitor-device-state-changed"
-  }
-}
-
 # SQS Queues for Lambda processors (fan-out from SNS)
-resource "aws_sqs_queue" "presence_tracker" {
-  name                       = "network-monitor-presence-tracker"
-  visibility_timeout_seconds = 60
-  message_retention_seconds  = 345600 # 4 days
-
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.presence_tracker_dlq.arn
-    maxReceiveCount     = 3
-  })
-
-  tags = {
-    Name = "network-monitor-presence-tracker"
-  }
-}
-
-resource "aws_sqs_queue" "presence_tracker_dlq" {
-  name                      = "network-monitor-presence-tracker-dlq"
-  message_retention_seconds = 1209600 # 14 days
-
-  tags = {
-    Name = "network-monitor-presence-tracker-dlq"
-  }
-}
-
 resource "aws_sqs_queue" "notifier" {
   name                       = "network-monitor-notifier"
   visibility_timeout_seconds = 60
@@ -127,26 +95,8 @@ resource "aws_sqs_queue" "metadata_enricher_dlq" {
 }
 
 # SNS to SQS subscriptions
-resource "aws_sns_topic_subscription" "device_activity_to_presence" {
-  topic_arn = aws_sns_topic.device_activity.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.presence_tracker.arn
-}
-
-resource "aws_sns_topic_subscription" "device_discovered_to_presence" {
-  topic_arn = aws_sns_topic.device_discovered.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.presence_tracker.arn
-}
-
 resource "aws_sns_topic_subscription" "device_discovered_to_notifier" {
   topic_arn = aws_sns_topic.device_discovered.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.notifier.arn
-}
-
-resource "aws_sns_topic_subscription" "device_state_changed_to_notifier" {
-  topic_arn = aws_sns_topic.device_state_changed.arn
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.notifier.arn
 }
@@ -158,30 +108,6 @@ resource "aws_sns_topic_subscription" "device_discovered_to_enricher" {
 }
 
 # SQS Queue Policies to allow SNS to send messages
-resource "aws_sqs_queue_policy" "presence_tracker" {
-  queue_url = aws_sqs_queue.presence_tracker.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "sns.amazonaws.com"
-      }
-      Action   = "sqs:SendMessage"
-      Resource = aws_sqs_queue.presence_tracker.arn
-      Condition = {
-        ArnEquals = {
-          "aws:SourceArn" = [
-            aws_sns_topic.device_activity.arn,
-            aws_sns_topic.device_discovered.arn
-          ]
-        }
-      }
-    }]
-  })
-}
-
 resource "aws_sqs_queue_policy" "notifier" {
   queue_url = aws_sqs_queue.notifier.id
 
@@ -196,10 +122,7 @@ resource "aws_sqs_queue_policy" "notifier" {
       Resource = aws_sqs_queue.notifier.arn
       Condition = {
         ArnEquals = {
-          "aws:SourceArn" = [
-            aws_sns_topic.device_discovered.arn,
-            aws_sns_topic.device_state_changed.arn
-          ]
+          "aws:SourceArn" = aws_sns_topic.device_discovered.arn
         }
       }
     }]

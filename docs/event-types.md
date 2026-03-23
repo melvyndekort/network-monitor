@@ -45,22 +45,23 @@ Events flow through the system as JSON objects with a common schema.
 
 | Type | Description | Trigger |
 |------|-------------|---------|
-| `state_changed` | Device state transition | track-presence Lambda detects change |
+| *(none — state is derived)* | Online/offline is computed from `online_until` at read time | No event needed |
 
-## State Machine
+## Presence Model
+
+Devices have an `online_until` timestamp that is refreshed on every activity event:
 
 ```
-unknown → online (first activity seen)
-online → offline (no activity for 15 minutes)
-offline → online (activity seen again)
+online_until = now + 900 (15 minutes)
 ```
+
+A device is **online** if `online_until > now`, otherwise **offline**. No state machine, no state change events.
 
 ## Event Routing
 
 ```
 SQS (device-events.fifo)
   → event-router Lambda
-    → SNS device-discovered → presence-tracker, notifier, metadata-enricher
-    → SNS device-activity → presence-tracker
-    → SNS device-state-changed → notifier
+    → SNS device-discovered → notifier, metadata-enricher
+    → SNS device-activity
 ```

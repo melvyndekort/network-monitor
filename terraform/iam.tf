@@ -67,69 +67,6 @@ resource "aws_iam_role_policy" "event_router" {
   })
 }
 
-# Presence Tracker Lambda Role
-resource "aws_iam_role" "track_presence" {
-  name = "network-monitor-track-presence"
-  path = "/network-monitor/"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "track_presence" {
-  name = "track-presence-policy"
-  role = aws_iam_role.track_presence.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.presence_tracker.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem"
-        ]
-        Resource = [
-          aws_dynamodb_table.devices.arn,
-          aws_dynamodb_table.device_events.arn
-        ]
-      },
-      {
-        Effect   = "Allow"
-        Action   = "sns:Publish"
-        Resource = aws_sns_topic.device_state_changed.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:${var.aws_region}:${var.account_id}:*"
-      }
-    ]
-  })
-}
-
 # Notifier Lambda Role
 resource "aws_iam_role" "send_notifications" {
   name = "network-monitor-send-notifications"

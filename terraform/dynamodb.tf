@@ -12,11 +12,6 @@ resource "aws_dynamodb_table" "devices" {
   }
 
   attribute {
-    name = "current_state"
-    type = "S"
-  }
-
-  attribute {
     name = "last_seen"
     type = "N"
   }
@@ -24,14 +19,6 @@ resource "aws_dynamodb_table" "devices" {
   attribute {
     name = "last_vlan"
     type = "N"
-  }
-
-  # GSI for querying by state
-  global_secondary_index {
-    name            = "state-index"
-    hash_key        = "current_state"
-    range_key       = "last_seen"
-    projection_type = "ALL"
   }
 
   # GSI for querying by VLAN

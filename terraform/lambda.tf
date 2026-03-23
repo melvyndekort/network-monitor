@@ -31,35 +31,6 @@ resource "aws_lambda_event_source_mapping" "event_router" {
   batch_size       = 10
 }
 
-# Track Presence Lambda
-resource "aws_lambda_function" "track_presence" {
-  filename      = "track_presence.zip"
-  function_name = "network-monitor-track-presence"
-  role          = aws_iam_role.track_presence.arn
-  handler       = "handler.handler"
-  runtime       = "python3.12"
-  timeout       = 30
-  memory_size   = 256
-
-  environment {
-    variables = {
-      DEVICES_TABLE       = aws_dynamodb_table.devices.name
-      EVENTS_TABLE        = aws_dynamodb_table.device_events.name
-      TOPIC_STATE_CHANGED = aws_sns_topic.device_state_changed.arn
-    }
-  }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
-}
-
-resource "aws_lambda_event_source_mapping" "track_presence" {
-  event_source_arn = aws_sqs_queue.presence_tracker.arn
-  function_name    = aws_lambda_function.track_presence.arn
-  batch_size       = 10
-}
-
 # Send Notifications Lambda
 resource "aws_lambda_function" "send_notifications" {
   filename      = "send_notifications.zip"

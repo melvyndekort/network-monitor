@@ -33,7 +33,7 @@ Returns all tracked devices.
       "notify": true,
       "first_seen": 1773588353,
       "last_seen": 1773588377,
-      "last_online": 1773588355
+      "online_until": 1773589277
     }
   ]
 }

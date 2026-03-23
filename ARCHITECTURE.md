@@ -194,36 +194,6 @@ elif event_type in ['state_changed']:
 - Concurrency: 10
 - Batch size: 10 events
 
-#### Lambda: track-presence
-
-**Purpose**: Maintain device state machine (online/offline)
-
-**Trigger**: SQS (presence-tracker-queue)
-
-**State Machine**:
-```
-unknown → discovered → online → offline → stale
-```
-
-**Responsibilities**:
-- Read current state from DynamoDB
-- Apply state transition rules
-- Update DynamoDB (devices table)
-- Write presence data to DynamoDB
-- Publish state change events to SNS
-
-**State Transition Rules**:
-- `unknown` → `discovered`: First time seeing device
-- `discovered` → `online`: Device responds to activity check
-- `online` → `offline`: No activity for 15 minutes
-- `offline` → `online`: Device activity detected
-- `offline` → `stale`: Offline for 30 days
-
-**Configuration**:
-- Memory: 256 MB
-- Timeout: 30 seconds
-- Concurrency: 5
-
 #### Lambda: send-notifications
 
 **Purpose**: Send notifications via Apprise
@@ -336,21 +306,17 @@ See [README.md](README.md#data-model) for detailed table schemas.
 8. Lambda writes to DynamoDB (device_events)
 9. Lambda publishes to SNS (device-discovered)
 10. SNS fans out to multiple SQS queues
-11. Lambda (track-presence) updates device state
-12. Lambda (send-notifications) sends notification
-13. Lambda (enrich-metadata) looks up manufacturer
+11. Lambda (send-notifications) sends notification
+12. Lambda (enrich-metadata) looks up manufacturer
 ```
 
 ### State Change Flow
 
 ```
 1. Device goes offline (no activity for 15 minutes)
-2. Lambda (track-presence) detects timeout
-3. Lambda updates DynamoDB (devices.current_state = offline)
-4. Lambda writes to DynamoDB (device_presence)
-5. Lambda publishes to SNS (device-state-changed)
-6. Lambda (send-notifications) sends offline notification
-7. WebSocket clients receive real-time update
+2. online_until timestamp expires
+3. Next API/UI read computes current_state = offline
+4. No Lambda invocation needed — status is derived at read time
 ```
 
 ### API Query Flow
@@ -359,7 +325,7 @@ See [README.md](README.md#data-model) for detailed table schemas.
 1. User requests GET /devices?state=online
 2. API Gateway authenticates request
 3. Lambda (api-handler) invoked
-4. Lambda queries DynamoDB (state-index GSI)
+4. Lambda queries DynamoDB (devices table)
 5. Lambda returns JSON response
 6. API Gateway returns to user
 ```
@@ -403,7 +369,7 @@ All events follow this schema:
 | `dhcp_released` | routeros_dhcp | DHCP lease released |
 | `wireless_connected` | wireless | Client associated to AP |
 | `wireless_disconnected` | wireless | Client disassociated |
-| `state_changed` | track_presence | Device state transition |
+| `state_changed` | *(removed)* | State is derived from `online_until` at read time |
 
 ### Fan-Out Pattern
 
@@ -411,7 +377,6 @@ All events follow this schema:
 SNS Topic: device-events
   ↓
   ├─→ SQS: event-processor-queue → Lambda: event-router
-  ├─→ SQS: presence-tracker-queue → Lambda: track-presence
   ├─→ SQS: notifier-queue → Lambda: send-notifications
   └─→ SQS: metadata-enricher-queue → Lambda: enrich-metadata
 ```
@@ -428,17 +393,18 @@ SNS Topic: device-events
 
 Stored in DynamoDB `devices` table.
 
-**State Transitions**:
+**Presence Model**:
+
+Each device has an `online_until` timestamp, refreshed on every activity event:
 ```
-unknown → discovered → online → offline → stale
+online_until = now + 900 (15 minutes)
 ```
 
+A device is **online** if `online_until > now`, otherwise **offline**. Status is computed at read time by the API handler — no state machine, no state change events, no dedicated Lambda.
+
 **State Definitions**:
-- `unknown`: Never seen before
-- `discovered`: First event received
-- `online`: Active within last 15 minutes
-- `offline`: No activity for 15+ minutes
-- `stale`: Offline for 30+ days
+- `online`: `online_until` is in the future
+- `offline`: `online_until` has passed
 
 ### Event History
 
@@ -553,11 +519,7 @@ Stored in DynamoDB `device_presence` table (optional).
 - Publish to SNS (device-discovered, device-activity)
 - Write to CloudWatch Logs
 
-**track-presence-role**:
-- Read from SQS (presence-tracker-queue)
-- Read/Write DynamoDB (devices, device_presence)
-- Publish to SNS (device-state-changed)
-- Write to CloudWatch Logs
+**track-presence-role**: *(removed — presence is derived from `online_until` at read time)*
 
 **send-notifications-role**:
 - Read from SQS (notifier-queue)
@@ -623,7 +585,6 @@ Stored in DynamoDB `device_presence` table (optional).
 
 **Log Groups**:
 - `/aws/lambda/event-router`
-- `/aws/lambda/track-presence`
 - `/aws/lambda/send-notifications`
 - `/aws/lambda/enrich-metadata`
 - `/aws/lambda/api-handler`

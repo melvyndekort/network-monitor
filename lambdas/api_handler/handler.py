@@ -1,6 +1,7 @@
 """API handler Lambda - REST API for device management."""
 import json
 import os
+import time
 from decimal import Decimal
 import boto3
 
@@ -42,12 +43,18 @@ def handler(event, context):
     return {'statusCode': 404, 'body': json.dumps({'error': 'Not found'}, cls=DecimalEncoder)}
 
 
+def enrich_status(device):
+    """Compute online/offline status from online_until."""
+    device['current_state'] = 'online' if device.get('online_until', 0) > int(time.time()) else 'offline'
+    return device
+
+
 def list_devices():
     """List all devices."""
     response = devices_table.scan()
     return {
         'statusCode': 200,
-        'body': json.dumps({'devices': response['Items']}, cls=DecimalEncoder)
+        'body': json.dumps({'devices': [enrich_status(d) for d in response['Items']]}, cls=DecimalEncoder)
     }
 
 
@@ -59,7 +66,7 @@ def get_device(mac):
     if not device:
         return {'statusCode': 404, 'body': json.dumps({'error': 'Device not found'}, cls=DecimalEncoder)}
     
-    return {'statusCode': 200, 'body': json.dumps(device, cls=DecimalEncoder)}
+    return {'statusCode': 200, 'body': json.dumps(enrich_status(device), cls=DecimalEncoder)}
 
 
 def update_device(mac, updates):

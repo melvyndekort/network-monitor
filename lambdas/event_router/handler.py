@@ -15,6 +15,7 @@ dedup_table = dynamodb.Table(os.environ.get('DEDUP_TABLE', ''))
 sns = boto3.client('sns')
 TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
 TOPIC_ACTIVITY = os.environ.get('TOPIC_ACTIVITY', '')
+ONLINE_TTL = 900  # 15 minutes
 
 
 def handler(event, context):
@@ -74,6 +75,7 @@ def get_device(mac):
 
 def create_device(event):
     """Create new device."""
+    now = int(time.time())
     devices_table.put_item(Item={
         'mac': event['mac'],
         'name': event.get('hostname'),
@@ -82,23 +84,25 @@ def create_device(event):
         'device_type': None,
         'last_ip': event.get('ip'),
         'last_vlan': event.get('vlan'),
-        'current_state': 'unknown',
         'notify': True,
-        'first_seen': int(time.time()),
-        'last_seen': int(time.time()),
+        'first_seen': now,
+        'last_seen': now,
+        'online_until': now + ONLINE_TTL,
         'metadata': {}
     })
 
 
 def update_device_last_seen(mac, event):
-    """Update device last_seen."""
+    """Update device last_seen and online_until."""
+    now = int(time.time())
     devices_table.update_item(
         Key={'mac': mac},
-        UpdateExpression='SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan',
+        UpdateExpression='SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou',
         ExpressionAttributeValues={
-            ':ls': int(time.time()),
+            ':ls': now,
             ':ip': event.get('ip'),
-            ':vlan': event.get('vlan')
+            ':vlan': event.get('vlan'),
+            ':ou': now + ONLINE_TTL
         }
     )
 

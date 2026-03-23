@@ -40,7 +40,6 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 ┌─────────────────────────────────────────────────────────────────┐
 │  AWS - EVENT PROCESSORS (Lambda)                                │
 │  • event-router: Normalize & route events                       │
-│  • track-presence: State machine (online/offline)               │
 │  • send-notifications: Apprise integration                      │
 │  • enrich-metadata: Manufacturer lookup                         │
 └─────────────────────────────────────────────────────────────────┘
@@ -80,9 +79,9 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 - **Static IP Detection**: Discovers devices with static IPs through ARP polling
 
 ### Presence Tracking
-- **State Machine**: `unknown` → `discovered` → `online` → `offline` → `stale`
+- **TTL-Based**: Each device has an `online_until` timestamp refreshed on every activity event
+- **Read-Time Evaluation**: Online/offline status computed when queried — no state machine needed
 - **Real-time Updates**: WebSocket support for live device status
-- **Timeout Detection**: Marks devices offline after 15 minutes of inactivity
 - **Historical Data**: 90-day event retention in DynamoDB
 
 ### Notifications
@@ -119,15 +118,13 @@ Attributes:
 - device_type: "phone"
 - last_ip: "10.204.10.100"
 - last_vlan: 10
-- current_state: "online" | "offline" | "unknown"
+- current_state: "online" | "offline" (computed from online_until at read time)
 - notify: true
 - first_seen: 1710155697 (unix timestamp)
 - last_seen: 1710155697
-- last_online: 1710155697
-- last_offline: 1710155000
+- online_until: 1710156597 (last_seen + 900s)
 - metadata: { ... }
 
-GSI: state-index (current_state, last_seen)
 GSI: vlan-index (last_vlan, last_seen)
 ```
 
@@ -242,9 +239,6 @@ network-monitor/
 │   │   ├── sns.py
 │   │   └── models.py
 │   ├── event_router/
-│   │   ├── handler.py
-│   │   └── requirements.txt
-│   ├── track_presence/
 │   │   ├── handler.py
 │   │   └── requirements.txt
 │   ├── send_notifications/
@@ -438,7 +432,7 @@ docker run --rm -e MIKROTIK_HOST=10.204.10.1 collector-test
 - `wireless_disconnected`: Client disassociated
 
 ### State Events
-- `state_changed`: Device state transition (online/offline)
+- `state_changed`: *(removed — online/offline is derived from `online_until` at read time)*
 
 See [docs/event-types.md](docs/event-types.md) for detailed event schemas.
 
