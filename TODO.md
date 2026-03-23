@@ -186,5 +186,5 @@ After fixing both, re-added `trusted_key_groups` to the `/api/*` behavior for si
 ### Shared Lambda Libraries
 README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Currently each Lambda has inline boto3 code. Optional refactor.
 
-### Tests
-`tests/unit/` and `tests/integration/` are empty. Unit tests exist co-located in each Lambda dir. Central test dirs are unused.
+### ~~Tests~~ ✅ Done (2026-03-23)
+Removed empty `tests/unit/` and `tests/integration/` dirs. Tests are co-located: each Lambda has `test_handler.py`, data-collector has `tests/`. Root `Makefile` runs all tests via `make test`.

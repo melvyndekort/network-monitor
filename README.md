@@ -270,9 +270,6 @@ network-monitor/
 ├── scripts/                           # Deployment scripts
 │   ├── deploy_lambdas.sh
 │   └── package_lambdas.sh
-├── tests/                             # Tests
-│   ├── unit/
-│   └── integration/
 ├── docs/                              # Additional documentation
 │   ├── api.md                         # API documentation
 │   ├── event-types.md                 # Event type reference
@@ -405,12 +402,14 @@ See [docs/grafana-setup.md](docs/grafana-setup.md) for dashboard JSON and setup 
 ## 🧪 Testing
 
 ```bash
-# Run unit tests
-cd lambdas
-pytest tests/unit/
+# Run all tests
+make test
 
-# Run integration tests
-pytest tests/integration/
+# Run Lambda unit tests only
+make test-lambdas
+
+# Run data collector tests only
+make test-collector
 
 # Test data collector locally
 cd data-collector
