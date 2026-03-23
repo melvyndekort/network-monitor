@@ -92,7 +92,7 @@ def send_apprise(title, body):
         http.request(
             'POST',
             f"{APPRISE_URL}/notify/apprise",
-            body=json.dumps({'title': title, 'body': body}),
+            body=json.dumps({'title': title, 'body': body, 'tag': 'homelab'}),
             headers={
                 'Content-Type': 'application/json',
                 'CF-Access-Client-Id': CF_ACCESS_CLIENT_ID,
