@@ -16,6 +16,7 @@ sns = boto3.client('sns')
 TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
 TOPIC_ACTIVITY = os.environ.get('TOPIC_ACTIVITY', '')
 ONLINE_TTL = 900  # 15 minutes
+DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 
 
 def handler(event, context):
@@ -88,6 +89,7 @@ def create_device(event):
         'first_seen': now,
         'last_seen': now,
         'online_until': now + ONLINE_TTL,
+        'ttl': now + DEVICE_TTL,
         'metadata': {}
     })
 
@@ -97,12 +99,14 @@ def update_device_last_seen(mac, event):
     now = int(time.time())
     devices_table.update_item(
         Key={'mac': mac},
-        UpdateExpression='SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou',
+        UpdateExpression='SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou, #t = :ttl',
+        ExpressionAttributeNames={'#t': 'ttl'},
         ExpressionAttributeValues={
             ':ls': now,
             ':ip': event.get('ip'),
             ':vlan': event.get('vlan'),
-            ':ou': now + ONLINE_TTL
+            ':ou': now + ONLINE_TTL,
+            ':ttl': now + DEVICE_TTL
         }
     )
 
