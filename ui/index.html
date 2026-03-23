@@ -94,10 +94,12 @@
             const device = devices.find(d => d.mac === mac);
             if (device && name !== (device.name || '')) {
                 device.name = name || null;
+                const body = JSON.stringify({name: name || null});
+                const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))).map(b => b.toString(16).padStart(2, '0')).join('');
                 await fetch(API + '/devices/' + encodeURIComponent(mac), {
                     method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name: name || null})
+                    headers: {'Content-Type': 'application/json', 'x-amz-content-sha256': hash},
+                    body: body
                 });
             }
             render();
@@ -166,7 +168,6 @@
         }
 
         load();
-        setInterval(load, 30000);
     </script>
 </body>
 </html>
