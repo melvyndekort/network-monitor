@@ -67,7 +67,7 @@ Network Monitor is a serverless, event-driven system for comprehensive network d
 **Technology**: Python 3.12, librouteros
 
 **Responsibilities**:
-- Poll MikroTik ARP table every 30 seconds
+- Poll MikroTik ARP table every 60 seconds
 - Poll DHCP leases
 - Poll wireless registrations
 - Output structured JSON events to stdout
@@ -434,7 +434,7 @@ Stored in DynamoDB `device_presence` table (optional).
 ### Current Scale
 
 - **Devices**: ~50-100
-- **Events**: ~500K/month
+- **Events**: ~50K/month
 - **API Requests**: ~10K/month
 
 ### Scaling Limits
@@ -443,8 +443,8 @@ Stored in DynamoDB `device_presence` table (optional).
 |-----------|---------|----------------------|
 | Data Collector | 1 instance | 10 instances |
 | Vector | 1 instance | 5 instances |
-| SQS | 500K msgs/month | 1M msgs/month (free tier) |
-| Lambda | 500K invocations/month | 1M invocations/month (free tier) |
+| SQS | 50K msgs/month | 1M msgs/month (free tier) |
+| Lambda | 50K invocations/month | 1M invocations/month (free tier) |
 | DynamoDB | On-demand | Unlimited |
 | API Gateway | 10K requests/month | 1M requests/month (free tier) |
 

@@ -13,7 +13,7 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 │  ON-PREMISE (compute-1)                                          │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │ Data Collector Container                                    │ │
-│  │  • Polls MikroTik ARP table (every 30s)                    │ │
+│  │  • Polls MikroTik ARP table (every 60s)                    │ │
 │  │  • Polls DHCP leases                                        │ │
 │  │  • Polls wireless registrations                            │ │
 │  │  • Outputs JSON events to stdout                           │ │
@@ -72,7 +72,7 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 ## 🎯 Features
 
 ### Device Discovery
-- **ARP Table Monitoring**: Polls MikroTik ARP table every 30 seconds
+- **ARP Table Monitoring**: Polls MikroTik ARP table every 60 seconds
 - **DHCP Lease Discovery**: Detects devices with active DHCP leases, even if they disconnect between ARP polls
 - **DHCP Event Tracking**: Captures DHCP assignments/releases via syslog
 - **Wireless Monitoring**: Tracks WiFi client associations/disassociations
@@ -292,7 +292,7 @@ network-monitor/
 MIKROTIK_HOST=10.204.10.1
 MIKROTIK_USER=api-user
 MIKROTIK_PASSWORD=secret
-POLL_INTERVAL=30  # seconds
+POLL_INTERVAL=60  # seconds
 ```
 
 #### Vector
@@ -380,9 +380,9 @@ See [docs/grafana-setup.md](docs/grafana-setup.md) for dashboard JSON and setup 
 - DynamoDB: 25 GB storage, 25 WCU, 25 RCU free (forever)
 
 ### Expected Monthly Usage (Homelab)
-- Lambda invocations: ~500K/month
+- Lambda invocations: ~50K/month
 - API Gateway requests: ~10K/month
-- SNS/SQS messages: ~500K/month
+- SNS/SQS messages: ~50K/month
 - DynamoDB storage: <1 GB
 
 ### Estimated Cost After Free Tier

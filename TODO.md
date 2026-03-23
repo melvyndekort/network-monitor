@@ -16,6 +16,10 @@
 - **Presence model rewrite** (2026-03-23): Replaced `track-presence` Lambda and state machine with TTL-based `online_until` field. Status computed at read time by API handler. Removed track-presence Lambda, IAM role, SQS queue, SNS topic, CI/CD workflow, and `state-index` GSI.
 - **Vector fix** (2026-03-23): `parse_collector` was failing on Python log lines from data-collector stderr. Added `filter_json` transform to drop non-JSON lines before parsing.
 - **DHCP lease discovery** (2026-03-23): Data collector now emits events for devices with active DHCP leases not seen in ARP table, catching transient devices that connect briefly between poll cycles.
+- **Apprise notifications** (2026-03-23): Fixed Apprise connectivity — exposed via Cloudflare Tunnel with Zero Trust service token auth. CF Access credentials stored in SSM Parameter Store. Uses stateful config key `/notify/apprise` with `homelab` tag.
+- **Event batching** (2026-03-23): Data collector emits one batch message per poll instead of one per device. Poll interval increased from 30s to 60s. Reduces SQS messages from ~5.7M/month to ~43K/month.
+- **Device auto-expiry** (2026-03-23): Devices automatically deleted after 14 days of inactivity via DynamoDB TTL. Re-discovered as new devices when they return.
+- **Vector fixes** (2026-03-23): Added `filter_json` transform to drop non-JSON log lines. Removed `dedupe` transform that was permanently suppressing events.
 
 ---
 

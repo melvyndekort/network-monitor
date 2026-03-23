@@ -32,6 +32,6 @@ Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use th
 
 ## Notes
 
-- The API auto-refreshes data every 30 seconds from the data collector
+- The API auto-refreshes data every 60 seconds from the data collector
 - DynamoDB event history has a 90-day TTL
 - Syslog data is also available in Grafana Cloud Loki (via Vector)
