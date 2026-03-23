@@ -4,6 +4,8 @@ import os
 import sys
 import time
 
+from librouteros.exceptions import LibRouterosError
+
 from data_collector.mikrotik import MikroTikClient
 from data_collector.models import make_event, make_batch
 
@@ -66,7 +68,7 @@ def main():
         try:
             known_macs = poll(client, known_macs)
             logger.info("Poll complete: %d devices", len(known_macs))
-        except Exception:
+        except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")
         time.sleep(POLL_INTERVAL)
 
