@@ -37,6 +37,13 @@ def poll(client, known_macs):
         else:
             print(make_event("device_activity", mac, ip, hostname), flush=True)
 
+    # Emit events for DHCP-only devices not seen in ARP
+    for mac, lease in dhcp.items():
+        if mac not in current_macs:
+            current_macs.add(mac)
+            event_type = "device_discovered" if mac not in known_macs else "device_activity"
+            print(make_event(event_type, mac, lease.get("ip"), lease.get("hostname")), flush=True)
+
     return current_macs
 
 
