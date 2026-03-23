@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.0"
+    }
   }
 
   backend "s3" {
@@ -28,4 +32,22 @@ provider "aws" {
       Environment = "production"
     }
   }
+}
+
+provider "aws" {
+  region = "us-east-1"
+  alias  = "useast1"
+
+  default_tags {
+    tags = {
+      Project     = "network-monitor"
+      ManagedBy   = "Terraform"
+      Repository  = "github.com/melvyndekort/network-monitor"
+      Environment = "production"
+    }
+  }
+}
+
+provider "cloudflare" {
+  api_token = data.terraform_remote_state.tf_cloudflare.outputs.api_token_network_monitor
 }

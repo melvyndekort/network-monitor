@@ -31,6 +31,11 @@ output "vector_aws_secret" {
 }
 
 output "ui_website_url" {
-  description = "S3 static website URL for UI"
-  value       = aws_s3_bucket_website_configuration.ui.website_endpoint
+  description = "Network Monitor UI URL"
+  value       = "https://${aws_acm_certificate.ui.domain_name}"
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (for cache invalidation)"
+  value       = aws_cloudfront_distribution.ui.id
 }

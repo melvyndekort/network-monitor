@@ -84,155 +84,25 @@ Bootstrap 5 dark theme dashboard at `http://network-monitor-ui-844347863910.s3-w
 
 **Cognito client ID**: `3s2qppa564nr44e2igdkb40qq7` (shared across startpage, example.melvyn.dev — same `get-cookies` Lambda)
 
-**Cross-account challenge**:
+**Cross-account state sharing**:
 
-Network-monitor runs in account `844347863910`. The existing repos (`example.melvyn.dev`, `startpage`) that use CloudFront + signed cookies all run in `075673041815` and solve their dependencies via `terraform_remote_state` — reading from `tf-cloudflare.tfstate` (for Cloudflare API token + zone ID) and `get-cookies.tfstate` (for CloudFront public key ID). Network-monitor cannot access the `mdekort-tfstate-075673041815` S3 bucket.
+Network-monitor runs in account `844347863910`. The existing repos (`example.melvyn.dev`, `startpage`) that use CloudFront + signed cookies all run in `075673041815` and solve their dependencies via `terraform_remote_state` — reading from `tf-cloudflare.tfstate` (for Cloudflare API token + zone ID) and `get-cookies.tfstate` (for CloudFront public key ID).
 
-The three values we need from `075673041815`:
+✅ **Solved** (2026-03-23): Added org-wide `s3:GetObject` policy to the `account-bootstrap` module in `tf-aws`. All tfstate buckets (`mdekort-tfstate-*`) now allow read access from any principal in the organization (`o-l6ev5lx5yj`). Applied to management account. No KMS needed (buckets use SSE-S3/AES256).
 
-| Value | Source | Used for |
-|---|---|---|
-| Cloudflare API token | `tf-cloudflare` output `api_token_*` (scoped per project) | Creating DNS records in `mdekort.nl` zone |
-| `mdekort.nl` zone ID | `tf-cloudflare` output `mdekort_zone_id` | Targeting the correct Cloudflare zone |
-| CloudFront public key ID | `get-cookies` output `public_key_id` | `aws_cloudfront_key_group` for signed cookie validation |
+Network-monitor can now use `terraform_remote_state` to read from `mdekort-tfstate-075673041815`, same pattern as the other repos.
 
-Below are two options for solving this. Both require the same prerequisite changes in the `get-cookies` repo (see "Required changes in other repos" below).
+**Values consumed via `terraform_remote_state`**:
 
----
-
-#### Option A: Pass everything as terraform variables (recommended)
-
-Treat the three cross-account values as terraform input variables. No cross-account S3 access needed.
-
-**How it works**:
-- `cloudflare_api_token` — sensitive variable, passed via `TF_VAR_cloudflare_api_token` environment variable in CI/CD (GitHub Actions secret)
-- `cloudflare_zone_id` — non-sensitive, goes in `terraform.tfvars` (zone IDs are not secret)
-- `cloudfront_public_key_id` — non-sensitive, goes in `terraform.tfvars` (rarely changes)
-
-**Cloudflare API token sourcing**: A new scoped token needs to be created in `tf-cloudflare` (in `075673041815`):
-- Add `cloudflare_api_token.network_monitor` resource in `tf-cloudflare/terraform/api_tokens.tf` with DNS Write permission on `mdekort.nl` zone (same pattern as `cloudflare_api_token.startpage`)
-- Add corresponding output `api_token_network_monitor` in `tf-cloudflare/terraform/output.tf`
-- After `terraform apply` in `tf-cloudflare`, retrieve the token value with `terraform output -raw api_token_network_monitor`
-- Store it as a GitHub Actions secret `CLOUDFLARE_API_TOKEN` in the `network-monitor` repo
-- For local use: `export TF_VAR_cloudflare_api_token=<token>` or pass via `-var`
-
-**Getting the other two values** (one-time manual lookup):
-- Zone ID: `cd ~/src/melvyndekort/tf-cloudflare/terraform && terraform output mdekort_zone_id` → put in `terraform.tfvars`
-- Public key ID: `cd ~/src/melvyndekort/get-cookies/terraform && terraform output public_key_id` → put in `terraform.tfvars`
-
-**CI/CD workflow change** (`.github/workflows/terraform.yml`):
-```yaml
-- name: Terraform Apply
-  env:
-    TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  run: terraform apply -auto-approve -input=false
-```
-
-**Terraform variables to add** (`variables.tf`):
-```hcl
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token with DNS Write on mdekort.nl zone"
-  type        = string
-  sensitive   = true
-}
-
-variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for mdekort.nl"
-  type        = string
-}
-
-variable "cloudfront_public_key_id" {
-  description = "CloudFront public key ID from get-cookies (account 075673041815)"
-  type        = string
-}
-```
-
-**Pros**:
-- Simple — no cross-account IAM, no bucket policies, no coupling between accounts
-- Works identically locally and in CI/CD
-- Each value is explicit and auditable in tfvars/secrets
-- No risk of accidentally exposing other state files across accounts
-- Follows the principle of least privilege — network-monitor only gets what it needs
-
-**Cons**:
-- Manual step to retrieve zone ID and public key ID (but they rarely change)
-- If the CloudFront public key is ever rotated in `get-cookies`, you must manually update `terraform.tfvars` here too
-- The Cloudflare API token is managed outside of terraform in this repo (stored as a GitHub secret, not derived from state)
-- Requires a change in `tf-cloudflare` repo to create the scoped token
+| Value | Source state file | Output key | Used for |
+|---|---|---|---|
+| Cloudflare API token | `tf-cloudflare.tfstate` | `api_token_network_monitor` | Creating DNS records in `mdekort.nl` zone |
+| `mdekort.nl` zone ID | `tf-cloudflare.tfstate` | `mdekort_zone_id` | Targeting the correct Cloudflare zone |
+| CloudFront public key ID | `get-cookies.tfstate` | `public_key_id` | `aws_cloudfront_key_group` for signed cookie validation |
 
 ---
 
-#### Option B: Cross-account S3 bucket policy for remote state access
-
-Grant the `844347863910` CI/CD role read access to specific state files in the `075673041815` tfstate bucket. Then use `terraform_remote_state` like the other repos do.
-
-**How it works**:
-- Add a bucket policy statement on `mdekort-tfstate-075673041815` allowing the network-monitor CI/CD role to `s3:GetObject` on specific keys
-- Use `terraform_remote_state` data sources in network-monitor terraform to read `tf-cloudflare.tfstate` and `get-cookies.tfstate`
-- Reference outputs directly: `data.terraform_remote_state.tf_cloudflare.outputs.api_token_network_monitor`, etc.
-
-**Bucket policy addition** (in `075673041815`, on `mdekort-tfstate-075673041815`):
-```json
-{
-  "Effect": "Allow",
-  "Principal": {
-    "AWS": "arn:aws:iam::844347863910:role/<network-monitor-ci-role>"
-  },
-  "Action": "s3:GetObject",
-  "Resource": [
-    "arn:aws:s3:::mdekort-tfstate-075673041815/tf-cloudflare.tfstate",
-    "arn:aws:s3:::mdekort-tfstate-075673041815/get-cookies.tfstate"
-  ]
-}
-```
-
-**Terraform data sources** (in network-monitor):
-```hcl
-data "terraform_remote_state" "tf_cloudflare" {
-  backend = "s3"
-  config = {
-    bucket = "mdekort-tfstate-075673041815"
-    key    = "tf-cloudflare.tfstate"
-    region = "eu-west-1"
-  }
-}
-
-data "terraform_remote_state" "get_cookies" {
-  backend = "s3"
-  config = {
-    bucket = "mdekort-tfstate-075673041815"
-    key    = "get-cookies.tfstate"
-    region = "eu-west-1"
-  }
-}
-```
-
-**Still needs a new Cloudflare API token**: Even with remote state access, `tf-cloudflare` doesn't have a `network_monitor` scoped token yet. You'd still need to create `cloudflare_api_token.network_monitor` in `tf-cloudflare` and add the output. The difference is that network-monitor terraform would read it from state instead of a variable.
-
-**Pros**:
-- Consistent with how `example.melvyn.dev` and `startpage` work — same pattern across all repos
-- Automatic propagation — if the CloudFront public key is rotated in `get-cookies`, network-monitor picks it up on next `terraform apply` without manual intervention
-- No GitHub secrets needed for Cloudflare token (it flows through state)
-
-**Cons**:
-- Requires modifying the tfstate bucket policy in `075673041815` — this is a sensitive change (state files contain all resource attributes, including secrets)
-- The `tf-cloudflare.tfstate` contains sensitive outputs (API keys, tunnel secrets, etc.) — granting `s3:GetObject` on it means the `844347863910` role can read ALL of that state, not just the network-monitor token
-- The `get-cookies.tfstate` contains the CloudFront private key (via `tls_private_key`) in its state — exposing this cross-account is a security concern
-- Couples the two accounts — changes to the bucket policy or state file keys could break network-monitor
-- The bucket policy is likely managed by a separate terraform config (or manually) — need to figure out where and how to add the statement
-- More complex to reason about for debugging ("why can't terraform read state?" vs "what's the variable value?")
-
-**Security note**: Terraform state files are not scoped — `s3:GetObject` on `get-cookies.tfstate` exposes the entire state including the `tls_private_key.private_key` resource which contains the CloudFront signing private key in plaintext. This is the key used to sign cookies for ALL sites (`startpage`, `example.melvyn.dev`, and network-monitor). This alone makes Option B risky unless the bucket policy is very carefully scoped and the CI/CD role in `844347863910` is tightly locked down.
-
----
-
-#### Decision
-
-**Option A is recommended.** The security implications of Option B (exposing full state files cross-account, including the CloudFront signing private key) outweigh the convenience of automatic value propagation. Option A requires one GitHub secret and two tfvars values — minimal overhead for a much cleaner security boundary.
-
----
-
-**Other challenges** (apply regardless of which option is chosen):
+**Other challenges**:
 
 1. **us-east-1 provider**: ACM certs for CloudFront must be in `us-east-1`. Need a second AWS provider with alias `useast1` (same pattern as startpage/example repos).
 
@@ -240,10 +110,10 @@ data "terraform_remote_state" "get_cookies" {
 
 ---
 
-**Required changes in other repos** (regardless of option chosen):
+**Required changes in other repos**:
 
 1. **`tf-cloudflare` repo** (`075673041815`):
-   - Add `cloudflare_api_token.network_monitor` in `api_tokens.tf` — scoped to DNS Write on `mdekort.nl` zone (same pattern as `cloudflare_api_token.startpage`)
+   - Add `cloudflare_api_token.network_monitor` in `api_tokens.tf` — DNS Write on `mdekort.nl` zone (same pattern as `cloudflare_api_token.cognito`)
    - Add `output "api_token_network_monitor"` in `output.tf`
    - `terraform apply`
 
@@ -261,37 +131,33 @@ data "terraform_remote_state" "get_cookies" {
 - `~/src/melvyndekort/example.melvyn.dev/src/assets/js/callback.js` — token→cookie exchange
 - `~/src/melvyndekort/example.melvyn.dev/src/error-pages/403.html` — login redirect
 
-**AWS account layout**:
-- `075673041815` — "root" personal account (`mdekort/Admin` profile). Hosts: Cognito, get-cookies Lambda, Cloudflare terraform state, startpage, example.melvyn.dev
-- `844347863910` — network-monitor sub-account (`mdekort/network-monitor` profile). Hosts: all network-monitor infrastructure
-- Cross-account access from `844347863910` → `075673041815` S3 tfstate bucket is **not** available
+**Cognito client ID**: `3s2qppa564nr44e2igdkb40qq7` (shared across startpage, example.melvyn.dev — same `get-cookies` Lambda)
 
-**Implementation order** (assuming Option A):
+**Implementation order**:
 
 **Phase 1 — Prerequisites (other repos)**:
-1. `tf-cloudflare`: Create `cloudflare_api_token.network_monitor` + output, `terraform apply`, retrieve token value
-2. `tf-cloudflare`: Retrieve `mdekort_zone_id` via `terraform output`
-3. `get-cookies`: Retrieve `public_key_id` via `terraform output`
-4. `get-cookies`: Add origin + callback URL to `terraform.tfvars` and `cognito.tf`, `terraform apply`
-5. `network-monitor` GitHub repo: Add `CLOUDFLARE_API_TOKEN` secret
+1. ~~`tf-cloudflare`: Create `cloudflare_api_token.network_monitor` + output, `terraform apply`~~ ✅ Done (2026-03-23)
+2. ~~`tf-aws`: Org-wide `s3:GetObject` on tfstate buckets via `account-bootstrap` module, `terraform apply`~~ ✅ Done (2026-03-23)
+3. ~~`get-cookies`: Add origin + callback URL, `terraform apply`~~ ✅ Done (2026-03-23)
 
 **Phase 2 — Terraform (network-monitor)**:
-6. Add variables: `cloudflare_api_token`, `cloudflare_zone_id`, `cloudfront_public_key_id` to `variables.tf`
-7. Add values to `terraform.tfvars`: zone ID, public key ID
-8. Update `providers.tf`: Add `cloudflare/cloudflare` provider + `aws.useast1` alias
-9. Create `terraform/acm.tf` — cert + Cloudflare DNS validation
-10. Create `terraform/dns.tf` — CNAME record
-11. Create `terraform/cloudfront.tf` — distribution, OAI, key group
-12. Update `terraform/s3.tf` — private bucket + OAI policy (remove public access)
-13. Update `terraform/outputs.tf` — add CloudFront domain / custom domain URL
-14. Update `.github/workflows/terraform.yml` — pass `TF_VAR_cloudflare_api_token` from secret
+4. ~~Add `terraform_remote_state` data sources for `tf-cloudflare` and `get-cookies`~~ ✅ Done (2026-03-23)
+5. ~~Update `providers.tf`: Add `cloudflare/cloudflare` provider + `aws.useast1` alias~~ ✅ Done (2026-03-23)
+6. ~~Create `terraform/acm.tf` — cert + Cloudflare DNS validation~~ ✅ Done (2026-03-23)
+7. ~~Create `terraform/dns.tf` — CNAME record~~ ✅ Done (2026-03-23)
+8. ~~Create `terraform/cloudfront.tf` — distribution, OAI, key group~~ ✅ Done (2026-03-23)
+9. ~~Update `terraform/s3.tf` — private bucket + OAI policy (remove public access)~~ ✅ Done (2026-03-23)
+10. ~~Update `terraform/outputs.tf` — add CloudFront domain / custom domain URL~~ ✅ Done (2026-03-23)
 
 **Phase 3 — UI auth files**:
-15. Create `ui/callback.html`
-16. Create `ui/assets/js/callback.js`
-17. Create `ui/error-pages/403.html`
-18. Update `deploy-ui.yml` workflow if needed
-19. Deploy UI files to S3
+11. ~~Create `ui/callback.html`~~ ✅ Done (2026-03-23)
+12. ~~Create `ui/assets/js/callback.js`~~ ✅ Done (2026-03-23)
+13. ~~Create `ui/error-pages/403.html`~~ ✅ Done (2026-03-23)
+14. ~~Deploy UI files to S3~~ ✅ Done (2026-03-23)
+
+**Cross-account key ID note**: CloudFront public keys are per-account. The `get-cookies` Lambda signs cookies with the key ID from `075673041815`, but the distribution in `844347863910` has its own key ID for the same key material. `callback.js` overrides the `Key-Pair-Id` cookie with the local account's key ID (`K3MOQECPWQIP8H`). The signature still validates because the underlying RSA key pair is identical.
+
+**Live at**: `https://network-monitor.mdekort.nl`
 
 ### Grafana Dashboards
 `examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.

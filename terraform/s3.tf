@@ -8,21 +8,13 @@ resource "aws_s3_bucket" "ui" {
   }
 }
 
-resource "aws_s3_bucket_website_configuration" "ui" {
-  bucket = aws_s3_bucket.ui.id
-
-  index_document {
-    suffix = "index.html"
-  }
-}
-
 resource "aws_s3_bucket_public_access_block" "ui" {
   bucket = aws_s3_bucket.ui.id
 
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 resource "aws_s3_bucket_policy" "ui" {
@@ -32,10 +24,12 @@ resource "aws_s3_bucket_policy" "ui" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Principal = "*"
-      Action    = "s3:GetObject"
-      Resource  = "${aws_s3_bucket.ui.arn}/*"
+      Effect = "Allow"
+      Principal = {
+        AWS = aws_cloudfront_origin_access_identity.ui.iam_arn
+      }
+      Action   = "s3:GetObject"
+      Resource = "${aws_s3_bucket.ui.arn}/*"
     }]
   })
 }
