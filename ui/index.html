@@ -17,6 +17,8 @@
         .status-unknown { color: #6c757d; }
         .vlan-badge { font-size: 0.8em; }
         #stats span { font-size: 1.4em; font-weight: bold; }
+        .editable { cursor: pointer; border-bottom: 1px dashed #6c757d; }
+        .editable:hover { border-bottom-color: #adb5bd; }
     </style>
 </head>
 <body>
@@ -54,7 +56,7 @@
     </div>
 
     <script>
-        const API = 'https://ys7ivwcdqf.execute-api.eu-west-1.amazonaws.com';
+        const API = '/api';
         let devices = [];
         let sortCol = 'last_seen';
         let sortDir = 'desc';
@@ -69,6 +71,36 @@
             if (s < 3600) return Math.floor(s / 60) + 'm ago';
             if (s < 86400) return Math.floor(s / 3600) + 'h ago';
             return Math.floor(s / 86400) + 'd ago';
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        function startEdit(mac) {
+            const td = document.querySelector(`[data-mac="${mac}"] .name-cell`);
+            const device = devices.find(d => d.mac === mac);
+            const current = device?.name || '';
+            td.innerHTML = `<input type="text" class="form-control form-control-sm" value="${esc(current)}" 
+                onkeydown="if(event.key==='Enter')saveName('${mac}',this.value);if(event.key==='Escape')render();"
+                onblur="saveName('${mac}',this.value)">`;
+            td.querySelector('input').focus();
+        }
+
+        async function saveName(mac, name) {
+            name = name.trim();
+            const device = devices.find(d => d.mac === mac);
+            if (device && name !== (device.name || '')) {
+                device.name = name || null;
+                await fetch(API + '/devices/' + encodeURIComponent(mac), {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: name || null})
+                });
+            }
+            render();
         }
 
         function render() {
@@ -96,9 +128,10 @@
                 const stClass = d.current_state === 'online' ? 'status-online' : d.current_state === 'offline' ? 'status-offline' : 'status-unknown';
                 const stIcon = d.current_state === 'online' ? '●' : '○';
                 const vlan = d.last_vlan ? `<span class="badge bg-${vlanColors[d.last_vlan] || 'secondary'} vlan-badge">${d.last_vlan} ${vlanNames[d.last_vlan] || ''}</span>` : '-';
-                return `<tr>
+                const nameDisplay = d.name ? esc(d.name) : '<span class="text-muted">click to set</span>';
+                return `<tr data-mac="${d.mac}">
                     <td class="${stClass}">${stIcon} ${d.current_state || 'unknown'}</td>
-                    <td>${d.name || '<span class="text-muted">-</span>'}</td>
+                    <td class="name-cell editable" onclick="startEdit('${d.mac}')">${nameDisplay}</td>
                     <td><code>${d.mac}</code></td>
                     <td>${d.last_ip || '-'}</td>
                     <td class="manufacturer">${d.manufacturer || '-'}</td>

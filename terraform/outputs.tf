@@ -3,9 +3,9 @@ output "sqs_queue_url" {
   value       = aws_sqs_queue.device_events.url
 }
 
-output "api_gateway_url" {
-  description = "API Gateway URL for REST API"
-  value       = aws_apigatewayv2_api.network_monitor.api_endpoint
+output "api_url" {
+  description = "API URL (via CloudFront)"
+  value       = "https://${aws_acm_certificate.ui.domain_name}/api"
 }
 
 output "dynamodb_tables" {

@@ -133,3 +133,16 @@ resource "aws_lambda_function" "api_handler" {
     }
   }
 }
+
+resource "aws_lambda_function_url" "api_handler" {
+  function_name      = aws_lambda_function.api_handler.function_name
+  authorization_type = "AWS_IAM"
+}
+
+resource "aws_lambda_permission" "cloudfront_oac" {
+  statement_id  = "AllowCloudFrontOAC"
+  action        = "lambda:InvokeFunctionUrl"
+  function_name = aws_lambda_function.api_handler.function_name
+  principal     = "cloudfront.amazonaws.com"
+  source_arn    = aws_cloudfront_distribution.ui.arn
+}

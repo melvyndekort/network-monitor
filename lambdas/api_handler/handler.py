@@ -21,6 +21,10 @@ def handler(event, context):
     """Handle API Gateway requests."""
     method = event['requestContext']['http']['method']
     path = event['requestContext']['http']['path']
+
+    # Strip /api prefix (CloudFront proxies /api/* to API Gateway)
+    if path.startswith('/api'):
+        path = path[4:] or '/'
     
     if path == '/devices' and method == 'GET':
         return list_devices()
