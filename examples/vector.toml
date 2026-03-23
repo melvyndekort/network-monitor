@@ -77,17 +77,10 @@ source = '''
 . = .
 '''
 
-# Deduplicate events (30s window, keyed on mac + event_type)
-[transforms.dedupe]
-type = "dedupe"
-inputs = ["merge_events"]
-fields.match = ["mac", "event_type"]
-cache.num_events = 5000
-
-# Send to AWS SQS
+# Send to AWS SQS (dedup handled by SQS FIFO content-based deduplication + event-router dedup table)
 [sinks.aws_sqs]
 type = "aws_sqs"
-inputs = ["dedupe"]
+inputs = ["merge_events"]
 queue_url = "${SQS_QUEUE_URL}"
 region = "${AWS_REGION}"
 encoding.codec = "json"
