@@ -159,21 +159,31 @@ Network-monitor can now use `terraform_remote_state` to read from `mdekort-tfsta
 
 **Live at**: `https://network-monitor.mdekort.nl`
 
-### Device Name Editing via UI ✅ Done (2026-03-23)
+### Device Name Editing via UI (in progress)
 
 **Goal**: Allow editing device names through the web UI.
 
-**Approach**: Replaced API Gateway with a Lambda function URL + CloudFront OAC (Origin Access Control). CloudFront signs all requests to the Lambda with SigV4, so the function URL is only accessible via CloudFront. Signed cookies protect the `/api/*` path — same auth as the UI.
+**What's done**:
+1. ~~Removed API Gateway, replaced with Lambda function URL~~ ✅
+2. ~~Added CloudFront OAC for Lambda function URL (SigV4 signing)~~ ✅
+3. ~~Added `/api/*` ordered cache behavior in CloudFront~~ ✅
+4. ~~Updated `api_handler` Lambda to strip `/api` prefix from paths~~ ✅
+5. ~~Changed UI API base URL to `/api` (relative path, same domain)~~ ✅
+6. ~~Made name column click-to-edit inline with PUT on save~~ ✅
 
-**Changes made**:
-1. Removed API Gateway entirely
-2. Added Lambda function URL with `authorization_type = "AWS_IAM"`
-3. Added CloudFront OAC (`origin_access_control_origin_type = "lambda"`, `signing_behavior = "always"`)
-4. Added `/api/*` ordered cache behavior in CloudFront with `trusted_key_groups`
-5. Added `aws_lambda_permission` allowing CloudFront to invoke the function URL
-6. Updated `api_handler` Lambda to strip `/api` prefix from paths
-7. Changed UI API base URL to `/api` (relative path, same domain)
-8. Made name column click-to-edit inline with PUT on save
+**Blocking issue**: CloudFront OAC SigV4 signing to the Lambda function URL returns 403 (`AccessDeniedException`). The Lambda is never invoked — the function URL rejects the SigV4 signature from CloudFront before the handler runs. The resource policy, OAC config, and origin domain all look correct per AWS documentation. Root cause unknown.
+
+**Current deployed state**:
+- Lambda function URL: `AWS_IAM` auth, OAC attached to CloudFront origin
+- `/api/*` behavior: no `trusted_key_groups` (removed during debugging), no origin request policy
+- Custom error response: restored (needed for login flow)
+- The `/api/*` path currently returns 403 because OAC signing fails
+
+**Next step**: Resolve the OAC 403 issue, or fall back to a custom header secret approach:
+- CloudFront adds a secret `X-Origin-Verify` header to `/api/*` requests
+- Lambda validates the header (3 lines of code)
+- Lambda function URL set to `NONE` auth + public invoke permission
+- Secret stored in terraform as a variable or generated with `random_password`
 
 ### Grafana Dashboards
 `examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.
