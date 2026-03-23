@@ -13,6 +13,9 @@
 - **CI/CD**: Reusable deploy-lambda workflow, per-Lambda trigger workflows, Terraform plan/apply workflow
 - **IAM fix** (deployed 2026-03-15): event-router was missing DynamoDB permissions for `devices` and `deduplication` tables (only had `device_events`). Fixed and verified with end-to-end test.
 - **End-to-end pipeline test** (2026-03-15): Sent manual `device_discovered` event to SQS → all Lambdas fired successfully. Event-router stored event + created device, enrich-metadata looked up manufacturer, send-notifications attempted Apprise (see known issue below).
+- **Presence model rewrite** (2026-03-23): Replaced `track-presence` Lambda and state machine with TTL-based `online_until` field. Status computed at read time by API handler. Removed track-presence Lambda, IAM role, SQS queue, SNS topic, CI/CD workflow, and `state-index` GSI.
+- **Vector fix** (2026-03-23): `parse_collector` was failing on Python log lines from data-collector stderr. Added `filter_json` transform to drop non-JSON lines before parsing.
+- **DHCP lease discovery** (2026-03-23): Data collector now emits events for devices with active DHCP leases not seen in ARP table, catching transient devices that connect briefly between poll cycles.
 
 ---
 
