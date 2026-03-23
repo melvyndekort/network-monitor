@@ -14,6 +14,11 @@ throttle_table = dynamodb.Table(os.environ.get('THROTTLE_TABLE', ''))
 http = urllib3.PoolManager()
 APPRISE_URL = os.environ.get('APPRISE_URL', '')
 
+# CF Access credentials (fetched once per container)
+ssm = boto3.client('ssm')
+CF_ACCESS_CLIENT_ID = ssm.get_parameter(Name='/network-monitor/cf-access-client-id', WithDecryption=True)['Parameter']['Value']
+CF_ACCESS_CLIENT_SECRET = ssm.get_parameter(Name='/network-monitor/cf-access-client-secret', WithDecryption=True)['Parameter']['Value']
+
 
 def handler(event, context):
     """Send notifications for device events."""
@@ -88,7 +93,11 @@ def send_apprise(title, body):
             'POST',
             f"{APPRISE_URL}/notify",
             body=json.dumps({'title': title, 'body': body}),
-            headers={'Content-Type': 'application/json'}
+            headers={
+                'Content-Type': 'application/json',
+                'CF-Access-Client-Id': CF_ACCESS_CLIENT_ID,
+                'CF-Access-Client-Secret': CF_ACCESS_CLIENT_SECRET,
+            }
         )
     except Exception as e:
         print(f"Failed to send notification: {e}")

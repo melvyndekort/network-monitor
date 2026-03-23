@@ -115,6 +115,16 @@ resource "aws_iam_role_policy" "send_notifications" {
       {
         Effect = "Allow"
         Action = [
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          aws_ssm_parameter.cf_access_client_id.arn,
+          aws_ssm_parameter.cf_access_client_secret.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"

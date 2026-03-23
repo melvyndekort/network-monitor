@@ -14,7 +14,19 @@ os.environ['APPRISE_URL'] = 'http://apprise.test'
 
 from moto import mock_aws
 import boto3
+
+# Start moto mock, create SSM parameters, import handler, then stop
+# (handler fetches SSM at module level)
+_mock = mock_aws()
+_mock.start()
+
+ssm = boto3.client('ssm', region_name='eu-west-1')
+ssm.put_parameter(Name='/network-monitor/cf-access-client-id', Value='test-id', Type='SecureString')
+ssm.put_parameter(Name='/network-monitor/cf-access-client-secret', Value='test-secret', Type='SecureString')
+
 from handler import handler, format_notification
+
+_mock.stop()
 
 
 @pytest.fixture
