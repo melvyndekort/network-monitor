@@ -91,7 +91,7 @@ def send_apprise(title, body):
     try:
         http.request(
             'POST',
-            f"{APPRISE_URL}/notify",
+            f"{APPRISE_URL}/notify/apprise",
             body=json.dumps({'title': title, 'body': body}),
             headers={
                 'Content-Type': 'application/json',
