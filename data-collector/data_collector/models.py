@@ -22,8 +22,8 @@ def detect_vlan(ip):
 
 
 def make_event(event_type, mac, ip=None, hostname=None, metadata=None):
-    """Create JSON event string matching event-router normalize_event() schema."""
-    return json.dumps({
+    """Create event dict matching event-router normalize_event() schema."""
+    return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": "data_collector",
         "event_type": event_type,
@@ -32,4 +32,9 @@ def make_event(event_type, mac, ip=None, hostname=None, metadata=None):
         "hostname": hostname,
         "vlan": detect_vlan(ip),
         "metadata": metadata or {},
-    })
+    }
+
+
+def make_batch(events):
+    """Create JSON batch string for a list of events."""
+    return json.dumps({"events": events})

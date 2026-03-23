@@ -5,13 +5,13 @@ import sys
 import time
 
 from data_collector.mikrotik import MikroTikClient
-from data_collector.models import make_event
+from data_collector.models import make_event, make_batch
 
 FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
 
 
 def build_dhcp_lookup(client):
@@ -20,29 +20,30 @@ def build_dhcp_lookup(client):
 
 
 def poll(client, known_macs):
-    """Poll ARP + DHCP, emit events to stdout, return current MAC set."""
+    """Poll ARP + DHCP, emit single batch event to stdout, return current MAC set."""
     dhcp = build_dhcp_lookup(client)
     arp = client.get_arp()
 
     current_macs = set()
+    events = []
+
     for entry in arp:
         mac = entry["mac"].upper()
         ip = entry["ip"]
         current_macs.add(mac)
-
         hostname = dhcp.get(mac, {}).get("hostname")
+        event_type = "device_discovered" if mac not in known_macs else "device_activity"
+        events.append(make_event(event_type, mac, ip, hostname))
 
-        if mac not in known_macs:
-            print(make_event("device_discovered", mac, ip, hostname), flush=True)
-        else:
-            print(make_event("device_activity", mac, ip, hostname), flush=True)
-
-    # Emit events for DHCP-only devices not seen in ARP
+    # DHCP-only devices not seen in ARP
     for mac, lease in dhcp.items():
         if mac not in current_macs:
             current_macs.add(mac)
             event_type = "device_discovered" if mac not in known_macs else "device_activity"
-            print(make_event(event_type, mac, lease.get("ip"), lease.get("hostname")), flush=True)
+            events.append(make_event(event_type, mac, lease.get("ip"), lease.get("hostname")))
+
+    if events:
+        print(make_batch(events), flush=True)
 
     return current_macs
 

@@ -23,30 +23,34 @@ def handler(event, context):
     """Process events from SQS and route to appropriate SNS topics."""
     for record in event['Records']:
         body = json.loads(record['body'])
-        
-        normalized = normalize_event(body)
-        if not normalized:
-            continue
-        
-        # Deduplication
-        dedup_key = f"{normalized['mac']}#{normalized['event_type']}#{int(time.time() // 30)}"
-        if check_dedup(dedup_key):
-            continue
-        set_dedup(dedup_key)
-        
-        # Store event
-        put_event(normalized)
-        
-        # Update device
-        device = get_device(normalized['mac'])
-        if device:
-            update_device_last_seen(normalized['mac'], normalized)
-        else:
-            create_device(normalized)
-        
-        # Route to SNS
-        topic = TOPIC_DISCOVERED if normalized['event_type'] == 'device_discovered' else TOPIC_ACTIVITY
-        sns.publish(TopicArn=topic, Message=json.dumps(normalized))
+
+        # Support batch messages ({"events": [...]}) and single events
+        raw_events = body.get('events', [body])
+
+        for raw in raw_events:
+            normalized = normalize_event(raw)
+            if not normalized:
+                continue
+            
+            # Deduplication
+            dedup_key = f"{normalized['mac']}#{normalized['event_type']}#{int(time.time() // 30)}"
+            if check_dedup(dedup_key):
+                continue
+            set_dedup(dedup_key)
+            
+            # Store event
+            put_event(normalized)
+            
+            # Update device
+            device = get_device(normalized['mac'])
+            if device:
+                update_device_last_seen(normalized['mac'], normalized)
+            else:
+                create_device(normalized)
+            
+            # Route to SNS
+            topic = TOPIC_DISCOVERED if normalized['event_type'] == 'device_discovered' else TOPIC_ACTIVITY
+            sns.publish(TopicArn=topic, Message=json.dumps(normalized))
     
     return {'statusCode': 200}
 

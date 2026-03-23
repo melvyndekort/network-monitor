@@ -31,11 +31,12 @@ def test_poll_new_device(monkeypatch, capsys):
     result = main.poll(MockClient(), set())
     assert "AA:BB:CC:DD:EE:FF" in result
 
-    output = json.loads(capsys.readouterr().out.strip())
-    assert output["event_type"] == "device_discovered"
-    assert output["mac"] == "AA:BB:CC:DD:EE:FF"
-    assert output["hostname"] == "myhost"
-    assert output["vlan"] == 10
+    batch = json.loads(capsys.readouterr().out.strip())
+    assert len(batch["events"]) == 1
+    assert batch["events"][0]["event_type"] == "device_discovered"
+    assert batch["events"][0]["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert batch["events"][0]["hostname"] == "myhost"
+    assert batch["events"][0]["vlan"] == 10
 
 
 def test_poll_existing_device(monkeypatch, capsys):
@@ -49,8 +50,8 @@ def test_poll_existing_device(monkeypatch, capsys):
     result = main.poll(MockClient(), {"AA:BB:CC:DD:EE:FF"})
     assert "AA:BB:CC:DD:EE:FF" in result
 
-    output = json.loads(capsys.readouterr().out.strip())
-    assert output["event_type"] == "device_activity"
+    batch = json.loads(capsys.readouterr().out.strip())
+    assert batch["events"][0]["event_type"] == "device_activity"
 
 
 def test_poll_multiple_devices(monkeypatch, capsys):
@@ -67,10 +68,9 @@ def test_poll_multiple_devices(monkeypatch, capsys):
     result = main.poll(MockClient(), set())
     assert len(result) == 2
 
-    lines = capsys.readouterr().out.strip().split("\n")
-    assert len(lines) == 2
-    events = [json.loads(line) for line in lines]
-    assert all(e["event_type"] == "device_discovered" for e in events)
+    batch = json.loads(capsys.readouterr().out.strip())
+    assert len(batch["events"]) == 2
+    assert all(e["event_type"] == "device_discovered" for e in batch["events"])
 
 
 def test_poll_no_hostname_without_dhcp(monkeypatch, capsys):
@@ -82,8 +82,8 @@ def test_poll_no_hostname_without_dhcp(monkeypatch, capsys):
             return []
 
     main.poll(MockClient(), set())
-    output = json.loads(capsys.readouterr().out.strip())
-    assert output["hostname"] is None
+    batch = json.loads(capsys.readouterr().out.strip())
+    assert batch["events"][0]["hostname"] is None
 
 
 def test_main_exits_without_password(monkeypatch):
