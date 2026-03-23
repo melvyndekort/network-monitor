@@ -363,8 +363,8 @@ All events follow this schema:
 
 | Event Type | Source | Description |
 |------------|--------|-------------|
-| `device_discovered` | mikrotik_arp | New MAC address seen |
-| `device_activity` | mikrotik_arp | Existing device still present |
+| `device_discovered` | data_collector | New MAC address seen (ARP or DHCP) |
+| `device_activity` | data_collector | Existing device still present (ARP or DHCP) |
 | `dhcp_assigned` | routeros_dhcp | DHCP lease granted |
 | `dhcp_released` | routeros_dhcp | DHCP lease released |
 | `wireless_connected` | wireless | Client associated to AP |

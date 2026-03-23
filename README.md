@@ -73,6 +73,7 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 
 ### Device Discovery
 - **ARP Table Monitoring**: Polls MikroTik ARP table every 30 seconds
+- **DHCP Lease Discovery**: Detects devices with active DHCP leases, even if they disconnect between ARP polls
 - **DHCP Event Tracking**: Captures DHCP assignments/releases via syslog
 - **Wireless Monitoring**: Tracks WiFi client associations/disassociations
 - **Multi-VLAN Support**: Monitors devices across all VLANs (Data, IoT, Guest, Management, VPN)

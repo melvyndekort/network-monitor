@@ -31,8 +31,8 @@ Events flow through the system as JSON objects with a common schema.
 
 | Type | Description | Trigger |
 |------|-------------|---------|
-| `device_discovered` | New MAC address seen for the first time | Data collector sees MAC not in known set |
-| `device_activity` | Known device still present on network | Data collector sees MAC already in known set |
+| `device_discovered` | New MAC address seen for the first time | Data collector sees MAC not in known set (ARP or DHCP) |
+| `device_activity` | Known device still present on network | Data collector sees MAC already in known set (ARP or DHCP) |
 
 ### DHCP Events
 
