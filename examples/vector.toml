@@ -55,10 +55,16 @@ event_type = if parsed.action == "assigned" { "dhcp_assigned" } else { "dhcp_rel
 }
 '''
 
+# Filter out non-JSON log lines from data-collector (e.g. Python logging to stderr)
+[transforms.filter_json]
+type = "filter"
+inputs = ["docker_logs"]
+condition = 'starts_with!(.message, "{")'
+
 # Parse data-collector JSON from docker logs
 [transforms.parse_collector]
 type = "remap"
-inputs = ["docker_logs"]
+inputs = ["filter_json"]
 source = '''
 . = parse_json!(.message)
 '''
