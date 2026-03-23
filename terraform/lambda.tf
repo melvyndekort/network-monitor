@@ -146,3 +146,11 @@ resource "aws_lambda_permission" "cloudfront_oac" {
   principal     = "cloudfront.amazonaws.com"
   source_arn    = aws_cloudfront_distribution.ui.arn
 }
+
+resource "aws_lambda_permission" "cloudfront_oac_invoke" {
+  statement_id  = "AllowCloudFrontOACInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api_handler.function_name
+  principal     = "cloudfront.amazonaws.com"
+  source_arn    = aws_cloudfront_distribution.ui.arn
+}

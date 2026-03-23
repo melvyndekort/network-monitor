@@ -159,7 +159,7 @@ Network-monitor can now use `terraform_remote_state` to read from `mdekort-tfsta
 
 **Live at**: `https://network-monitor.mdekort.nl`
 
-### Device Name Editing via UI (in progress)
+### ~~Device Name Editing via UI~~ ✅ Done (2026-03-23)
 
 **Goal**: Allow editing device names through the web UI.
 
@@ -171,19 +171,11 @@ Network-monitor can now use `terraform_remote_state` to read from `mdekort-tfsta
 5. ~~Changed UI API base URL to `/api` (relative path, same domain)~~ ✅
 6. ~~Made name column click-to-edit inline with PUT on save~~ ✅
 
-**Blocking issue**: CloudFront OAC SigV4 signing to the Lambda function URL returns 403 (`AccessDeniedException`). The Lambda is never invoked — the function URL rejects the SigV4 signature from CloudFront before the handler runs. The resource policy, OAC config, and origin domain all look correct per AWS documentation. Root cause unknown.
+**Root cause of OAC 403** (resolved 2026-03-23): Two issues:
+1. Missing `lambda:InvokeFunction` permission — only had `lambda:InvokeFunctionUrl`. AWS requires both permissions for OAC to work.
+2. Missing `origin_request_policy_id` on the `/api/*` cache behavior — needed `AllViewerExceptHostHeader` to forward headers properly for SigV4 signing.
 
-**Current deployed state**:
-- Lambda function URL: `AWS_IAM` auth, OAC attached to CloudFront origin
-- `/api/*` behavior: no `trusted_key_groups` (removed during debugging), no origin request policy
-- Custom error response: restored (needed for login flow)
-- The `/api/*` path currently returns 403 because OAC signing fails
-
-**Next step**: Resolve the OAC 403 issue, or fall back to a custom header secret approach:
-- CloudFront adds a secret `X-Origin-Verify` header to `/api/*` requests
-- Lambda validates the header (3 lines of code)
-- Lambda function URL set to `NONE` auth + public invoke permission
-- Secret stored in terraform as a variable or generated with `random_password`
+After fixing both, re-added `trusted_key_groups` to the `/api/*` behavior for signed cookie auth. Verified: direct Lambda URL → 403, CloudFront without cookies → 403, CloudFront with cookies → 200.
 
 ### Grafana Dashboards
 `examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.
