@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
+HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "300"))
 
 
 def build_dhcp_lookup(client):
@@ -22,33 +23,47 @@ def build_dhcp_lookup(client):
     return {lease["mac"].upper(): lease for lease in client.get_dhcp_leases()}
 
 
-def poll(client, known_macs, sqs_client):
-    """Poll ARP + DHCP, send events to SQS, return current MAC set."""
+def collect_devices(client):
+    """Poll ARP + DHCP, return dict of mac -> {ip, hostname}."""
     dhcp = build_dhcp_lookup(client)
     arp = client.get_arp()
 
-    current_macs = set()
-    events = []
-
+    devices = {}
     for entry in arp:
         mac = entry["mac"].upper()
-        ip = entry["ip"]
-        current_macs.add(mac)
-        hostname = dhcp.get(mac, {}).get("hostname")
-        event_type = "device_discovered" if mac not in known_macs else "device_activity"
-        events.append(make_event(event_type, mac, ip, hostname))
+        devices[mac] = {
+            "ip": entry["ip"],
+            "hostname": dhcp.get(mac, {}).get("hostname"),
+        }
 
-    # DHCP-only devices not seen in ARP
     for mac, lease in dhcp.items():
-        if mac not in current_macs:
-            current_macs.add(mac)
-            event_type = "device_discovered" if mac not in known_macs else "device_activity"
-            events.append(make_event(event_type, mac, lease.get("ip"), lease.get("hostname")))
+        if mac not in devices:
+            devices[mac] = {
+                "ip": lease.get("ip"),
+                "hostname": lease.get("hostname"),
+            }
+
+    return devices
+
+
+def poll(devices, known_macs, sqs_client, heartbeat):
+    """Send discovery events for new MACs. On heartbeat, send activity for all."""
+    events = []
+
+    new_macs = set(devices) - known_macs
+    for mac in new_macs:
+        d = devices[mac]
+        events.append(make_event("device_discovered", mac, d["ip"], d["hostname"]))
+
+    if heartbeat:
+        for mac in set(devices) - new_macs:
+            d = devices[mac]
+            events.append(make_event("device_activity", mac, d["ip"], d["hostname"]))
 
     if events:
         sqs_client.send_events(events)
 
-    return current_macs
+    return set(devices), len(events)
 
 
 def main():
@@ -68,12 +83,18 @@ def main():
     client = MikroTikClient(host, user, password)
     sqs_client = SQSClient(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
     known_macs = set()
+    last_heartbeat = 0
 
-    logger.info("Starting data collector (poll every %ds)", POLL_INTERVAL)
+    logger.info("Starting data collector (poll every %ds, heartbeat every %ds)", POLL_INTERVAL, HEARTBEAT_INTERVAL)
     while True:
         try:
-            known_macs = poll(client, known_macs, sqs_client)
-            logger.info("Poll complete: %d devices", len(known_macs))
+            now = time.monotonic()
+            heartbeat = (now - last_heartbeat) >= HEARTBEAT_INTERVAL
+            devices = collect_devices(client)
+            known_macs, sent = poll(devices, known_macs, sqs_client, heartbeat)
+            if heartbeat:
+                last_heartbeat = now
+            logger.info("Poll complete: %d devices, %d events sent%s", len(known_macs), sent, " (heartbeat)" if heartbeat else "")
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")
         time.sleep(POLL_INTERVAL)

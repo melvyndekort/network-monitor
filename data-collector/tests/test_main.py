@@ -1,38 +1,56 @@
 """Tests for main module."""
-import os
-import sys
 import pytest
 from unittest.mock import MagicMock
 from data_collector import main
 
 
-def test_build_dhcp_lookup(monkeypatch):
-    class MockClient:
-        def get_dhcp_leases(self):
-            return [
-                {"mac": "aa:bb:cc:dd:ee:ff", "ip": "10.204.10.100", "hostname": "host1"},
-                {"mac": "11:22:33:44:55:66", "ip": "10.204.10.101", "hostname": "host2"},
-            ]
+class MockClient:
+    def __init__(self, arp=None, dhcp=None):
+        self._arp = arp or []
+        self._dhcp = dhcp or []
 
-    result = main.build_dhcp_lookup(MockClient())
+    def get_arp(self):
+        return self._arp
+
+    def get_dhcp_leases(self):
+        return self._dhcp
+
+
+def test_build_dhcp_lookup():
+    client = MockClient(dhcp=[
+        {"mac": "aa:bb:cc:dd:ee:ff", "ip": "10.204.10.100", "hostname": "host1"},
+        {"mac": "11:22:33:44:55:66", "ip": "10.204.10.101", "hostname": "host2"},
+    ])
+    result = main.build_dhcp_lookup(client)
     assert "AA:BB:CC:DD:EE:FF" in result
     assert "11:22:33:44:55:66" in result
     assert result["AA:BB:CC:DD:EE:FF"]["hostname"] == "host1"
 
 
-def test_poll_new_device():
-    class MockClient:
-        def get_arp(self):
-            return [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}]
+def test_collect_devices():
+    client = MockClient(
+        arp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}],
+        dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}],
+    )
+    devices = main.collect_devices(client)
+    assert "AA:BB:CC:DD:EE:FF" in devices
+    assert devices["AA:BB:CC:DD:EE:FF"]["hostname"] == "myhost"
 
-        def get_dhcp_leases(self):
-            return [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}]
 
+def test_collect_devices_dhcp_only():
+    client = MockClient(
+        arp=[],
+        dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}],
+    )
+    devices = main.collect_devices(client)
+    assert "AA:BB:CC:DD:EE:FF" in devices
+
+
+def test_poll_new_device_sends_discovered():
+    devices = {"AA:BB:CC:DD:EE:FF": {"ip": "10.204.10.100", "hostname": "myhost"}}
     sqs = MagicMock()
-    result = main.poll(MockClient(), set(), sqs)
-    assert "AA:BB:CC:DD:EE:FF" in result
-
-    sqs.send_events.assert_called_once()
+    macs, sent = main.poll(devices, set(), sqs, heartbeat=False)
+    assert "AA:BB:CC:DD:EE:FF" in macs
     events = sqs.send_events.call_args[0][0]
     assert len(events) == 1
     assert events[0]["event_type"] == "device_discovered"
@@ -41,54 +59,45 @@ def test_poll_new_device():
     assert events[0]["vlan"] == 10
 
 
-def test_poll_existing_device():
-    class MockClient:
-        def get_arp(self):
-            return [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}]
-
-        def get_dhcp_leases(self):
-            return []
-
+def test_poll_known_device_no_heartbeat_sends_nothing():
+    devices = {"AA:BB:CC:DD:EE:FF": {"ip": "10.204.10.100", "hostname": "myhost"}}
     sqs = MagicMock()
-    result = main.poll(MockClient(), {"AA:BB:CC:DD:EE:FF"}, sqs)
-    assert "AA:BB:CC:DD:EE:FF" in result
+    macs, sent = main.poll(devices, {"AA:BB:CC:DD:EE:FF"}, sqs, heartbeat=False)
+    assert "AA:BB:CC:DD:EE:FF" in macs
+    assert sent == 0
+    sqs.send_events.assert_not_called()
 
+
+def test_poll_known_device_heartbeat_sends_activity():
+    devices = {"AA:BB:CC:DD:EE:FF": {"ip": "10.204.10.100", "hostname": "myhost"}}
+    sqs = MagicMock()
+    macs, sent = main.poll(devices, {"AA:BB:CC:DD:EE:FF"}, sqs, heartbeat=True)
     events = sqs.send_events.call_args[0][0]
+    assert len(events) == 1
     assert events[0]["event_type"] == "device_activity"
 
 
-def test_poll_multiple_devices():
-    class MockClient:
-        def get_arp(self):
-            return [
-                {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"},
-                {"mac": "11:22:33:44:55:66", "ip": "10.204.20.50", "interface": "bridge"},
-            ]
-
-        def get_dhcp_leases(self):
-            return []
-
+def test_poll_mix_new_and_known_on_heartbeat():
+    devices = {
+        "AA:BB:CC:DD:EE:FF": {"ip": "10.204.10.100", "hostname": None},
+        "11:22:33:44:55:66": {"ip": "10.204.20.50", "hostname": None},
+    }
     sqs = MagicMock()
-    result = main.poll(MockClient(), set(), sqs)
-    assert len(result) == 2
-
+    macs, sent = main.poll(devices, {"AA:BB:CC:DD:EE:FF"}, sqs, heartbeat=True)
+    assert len(macs) == 2
     events = sqs.send_events.call_args[0][0]
-    assert len(events) == 2
-    assert all(e["event_type"] == "device_discovered" for e in events)
+    types = {e["mac"]: e["event_type"] for e in events}
+    assert types["11:22:33:44:55:66"] == "device_discovered"
+    assert types["AA:BB:CC:DD:EE:FF"] == "device_activity"
 
 
-def test_poll_no_hostname_without_dhcp():
-    class MockClient:
-        def get_arp(self):
-            return [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}]
-
-        def get_dhcp_leases(self):
-            return []
-
+def test_poll_new_device_on_heartbeat_sends_discovered_not_activity():
+    devices = {"AA:BB:CC:DD:EE:FF": {"ip": "10.204.10.100", "hostname": None}}
     sqs = MagicMock()
-    main.poll(MockClient(), set(), sqs)
+    macs, sent = main.poll(devices, set(), sqs, heartbeat=True)
     events = sqs.send_events.call_args[0][0]
-    assert events[0]["hostname"] is None
+    assert len(events) == 1
+    assert events[0]["event_type"] == "device_discovered"
 
 
 def test_main_exits_without_password(monkeypatch):
