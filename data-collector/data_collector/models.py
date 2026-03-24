@@ -1,5 +1,4 @@
 """Event models matching the event-router Lambda schema."""
-import json
 from datetime import datetime, timezone
 
 VLAN_MAP = {
@@ -33,8 +32,3 @@ def make_event(event_type, mac, ip=None, hostname=None, metadata=None):
         "vlan": detect_vlan(ip),
         "metadata": metadata or {},
     }
-
-
-def make_batch(events):
-    """Create JSON batch string for a list of events."""
-    return json.dumps({"events": events})

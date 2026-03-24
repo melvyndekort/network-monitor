@@ -1,4 +1,4 @@
-"""Data collector - polls MikroTik and outputs JSON events to stdout."""
+"""Data collector - polls MikroTik and sends events to SQS."""
 import logging
 import os
 import sys
@@ -7,7 +7,8 @@ import time
 from librouteros.exceptions import LibRouterosError
 
 from data_collector.mikrotik import MikroTikClient
-from data_collector.models import make_event, make_batch
+from data_collector.models import make_event
+from data_collector.sqs import SQSClient
 
 FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
@@ -21,8 +22,8 @@ def build_dhcp_lookup(client):
     return {lease["mac"].upper(): lease for lease in client.get_dhcp_leases()}
 
 
-def poll(client, known_macs):
-    """Poll ARP + DHCP, emit single batch event to stdout, return current MAC set."""
+def poll(client, known_macs, sqs_client):
+    """Poll ARP + DHCP, send events to SQS, return current MAC set."""
     dhcp = build_dhcp_lookup(client)
     arp = client.get_arp()
 
@@ -45,7 +46,7 @@ def poll(client, known_macs):
             events.append(make_event(event_type, mac, lease.get("ip"), lease.get("hostname")))
 
     if events:
-        print(make_batch(events), flush=True)
+        sqs_client.send_events(events)
 
     return current_macs
 
@@ -55,18 +56,23 @@ def main():
     host = os.environ.get("MIKROTIK_HOST", "10.204.50.1")
     user = os.environ.get("MIKROTIK_USER", "api-user")
     password = os.environ.get("MIKROTIK_PASSWORD", "")
+    queue_url = os.environ.get("SQS_QUEUE_URL", "")
 
     if not password:
         logger.error("MIKROTIK_PASSWORD is required")
         sys.exit(1)
+    if not queue_url:
+        logger.error("SQS_QUEUE_URL is required")
+        sys.exit(1)
 
     client = MikroTikClient(host, user, password)
+    sqs_client = SQSClient(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
     known_macs = set()
 
     logger.info("Starting data collector (poll every %ds)", POLL_INTERVAL)
     while True:
         try:
-            known_macs = poll(client, known_macs)
+            known_macs = poll(client, known_macs, sqs_client)
             logger.info("Poll complete: %d devices", len(known_macs))
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")

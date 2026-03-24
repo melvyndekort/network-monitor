@@ -8,11 +8,6 @@ type = "syslog"
 address = "0.0.0.0:514"
 mode = "udp"
 
-# Docker logs from data-collector container
-[sources.docker_logs]
-type = "docker_logs"
-include_containers = ["data-collector"]
-
 # Fix syslog timestamp
 [transforms.fix_timestamp]
 type = "remap"
@@ -55,32 +50,10 @@ event_type = if parsed.action == "assigned" { "dhcp_assigned" } else { "dhcp_rel
 }
 '''
 
-# Filter out non-JSON log lines from data-collector (e.g. Python logging to stderr)
-[transforms.filter_json]
-type = "filter"
-inputs = ["docker_logs"]
-condition = 'starts_with!(.message, "{")'
-
-# Parse data-collector JSON from docker logs
-[transforms.parse_collector]
-type = "remap"
-inputs = ["filter_json"]
-source = '''
-. = parse_json!(.message)
-'''
-
-# Merge both event streams
-[transforms.merge_events]
-type = "remap"
-inputs = ["dhcp_to_event", "parse_collector"]
-source = '''
-. = .
-'''
-
-# Send to AWS SQS (dedup handled by SQS FIFO content-based deduplication + event-router dedup table)
+# Send DHCP events to AWS SQS
 [sinks.aws_sqs]
 type = "aws_sqs"
-inputs = ["merge_events"]
+inputs = ["dhcp_to_event"]
 queue_url = "${SQS_QUEUE_URL}"
 region = "${AWS_REGION}"
 encoding.codec = "json"

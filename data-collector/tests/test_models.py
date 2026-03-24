@@ -1,6 +1,5 @@
 """Tests for models module."""
-from data_collector.models import detect_vlan, make_event, make_batch
-import json
+from data_collector.models import detect_vlan, make_event
 
 
 def test_detect_vlan_data():
@@ -60,11 +59,3 @@ def test_make_event_no_ip():
 def test_make_event_with_metadata():
     result = make_event("device_discovered", "aa:bb:cc:dd:ee:ff", metadata={"key": "value"})
     assert result["metadata"] == {"key": "value"}
-
-
-def test_make_batch():
-    events = [make_event("device_activity", "aa:bb:cc:dd:ee:ff", "10.204.10.1")]
-    result = json.loads(make_batch(events))
-    assert "events" in result
-    assert len(result["events"]) == 1
-    assert result["events"][0]["mac"] == "AA:BB:CC:DD:EE:FF"

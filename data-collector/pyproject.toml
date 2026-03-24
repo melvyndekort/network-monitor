@@ -6,6 +6,7 @@ authors = [{name = "Melvyn de Kort", email = "melvyn@mdekort.nl"}]
 requires-python = ">=3.9"
 dependencies = [
     "librouteros>=3.2",
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]
