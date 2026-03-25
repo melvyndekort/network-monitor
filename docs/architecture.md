@@ -263,7 +263,7 @@ message_group_id = "{{ mac }}"
 
 #### DynamoDB Tables
 
-See [README.md](README.md#-data-model) for detailed table schemas.
+See [Event Types](event-types.md) for event schemas and the presence model.
 
 **Design Decisions**:
 - **On-demand pricing**: Unpredictable traffic patterns
