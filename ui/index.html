@@ -28,10 +28,11 @@
         <h1 class="mb-4">Network Monitor</h1>
 
         <div id="stats" class="row mb-4">
-            <div class="col-md-3"><div class="card text-center p-3"><span id="totalDevices">-</span><br>Total Devices</div></div>
-            <div class="col-md-3"><div class="card text-center p-3"><span id="onlineDevices" class="text-success">-</span><br>Online</div></div>
-            <div class="col-md-3"><div class="card text-center p-3"><span id="offlineDevices" class="text-danger">-</span><br>Offline</div></div>
-            <div class="col-md-3"><div class="card text-center p-3"><span id="vlans">-</span><br>VLANs</div></div>
+            <div class="col"><div class="card text-center p-3"><span id="totalDevices">-</span><br>Total Devices</div></div>
+            <div class="col"><div class="card text-center p-3"><span id="onlineDevices" class="text-success">-</span><br>Online</div></div>
+            <div class="col"><div class="card text-center p-3"><span id="offlineDevices" class="text-danger">-</span><br>Offline</div></div>
+            <div class="col"><div class="card text-center p-3"><span id="monitoredDevices" class="text-info">-</span><br>Monitored</div></div>
+            <div class="col"><div class="card text-center p-3"><span id="vlans">-</span><br>VLANs</div></div>
         </div>
 
         <div class="mb-3">
@@ -142,10 +143,12 @@
             });
 
             const online = devices.filter(d => d.current_state === 'online').length;
+            const monitored = devices.filter(d => d.notify).length;
             const vlans = [...new Set(devices.map(d => d.last_vlan).filter(Boolean))].length;
             document.getElementById('totalDevices').textContent = devices.length;
             document.getElementById('onlineDevices').textContent = online;
             document.getElementById('offlineDevices').textContent = devices.length - online;
+            document.getElementById('monitoredDevices').textContent = monitored;
             document.getElementById('vlans').textContent = vlans;
 
             const tbody = document.getElementById('deviceRows');
