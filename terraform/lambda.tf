@@ -88,6 +88,28 @@ resource "aws_lambda_event_source_mapping" "enrich_metadata" {
   batch_size       = 2
 }
 
+resource "aws_cloudwatch_event_rule" "enrich_retry" {
+  name                = "network-monitor-enrich-retry"
+  schedule_expression = "rate(1 day)"
+
+  tags = {
+    Name = "network-monitor-enrich-retry"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "enrich_retry" {
+  rule = aws_cloudwatch_event_rule.enrich_retry.name
+  arn  = aws_lambda_function.enrich_metadata.arn
+}
+
+resource "aws_lambda_permission" "enrich_retry" {
+  statement_id  = "AllowEventBridgeEnrichRetry"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.enrich_metadata.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.enrich_retry.arn
+}
+
 # API Handler Lambda
 resource "aws_lambda_function" "api_handler" {
   filename      = "api_handler.zip"
