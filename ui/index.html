@@ -50,6 +50,7 @@
                         <th class="sortable" data-sort="last_vlan">VLAN</th>
                         <th class="sortable" data-sort="hostname">Hostname</th>
                         <th class="sortable" data-sort="last_seen">Last Seen</th>
+                        <th>Monitor</th>
                     </tr>
                 </thead>
                 <tbody id="deviceRows"></tbody>
@@ -89,6 +90,18 @@
                 onkeydown="if(event.key==='Enter')saveName('${mac}',this.value);if(event.key==='Escape')render();"
                 onblur="saveName('${mac}',this.value)">`;
             td.querySelector('input').focus();
+        }
+
+        async function toggleNotify(mac, checked) {
+            const device = devices.find(d => d.mac === mac);
+            if (device) device.notify = checked;
+            const body = JSON.stringify({notify: checked});
+            const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))).map(b => b.toString(16).padStart(2, '0')).join('');
+            await fetch(API + '/devices/' + encodeURIComponent(mac), {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'x-amz-content-sha256': hash},
+                body: body
+            });
         }
 
         async function saveName(mac, name) {
@@ -142,6 +155,7 @@
                     <td>${vlan}</td>
                     <td>${d.hostname || '-'}</td>
                     <td>${timeAgo(d.last_seen)}</td>
+                    <td class="text-center"><input type="checkbox" class="form-check-input" ${d.notify ? 'checked' : ''} onchange="toggleNotify('${d.mac}',this.checked)"></td>
                 </tr>`;
             }).join('');
 
