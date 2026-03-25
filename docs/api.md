@@ -1,21 +1,20 @@
 # API Reference
 
-Base URL: `https://ys7ivwcdqf.execute-api.eu-west-1.amazonaws.com`
+Base URL: `https://network-monitor.mdekort.nl/api`
 
 ## Authentication
 
-- `GET` routes are public (no auth required)
-- `PUT` and `DELETE` routes require AWS IAM (SigV4) authentication
+All routes require CloudFront signed cookies (Cognito login at `auth.mdekort.nl`).
 
 ## Endpoints
 
 ### List Devices
 
 ```
-GET /devices
+GET /api/devices
 ```
 
-Returns all tracked devices.
+Returns all tracked devices with computed online/offline status.
 
 **Response:**
 ```json
@@ -33,7 +32,9 @@ Returns all tracked devices.
       "notify": true,
       "first_seen": 1773588353,
       "last_seen": 1773588377,
-      "online_until": 1773589277
+      "online_until": 1773589277,
+      "ttl": 1774798177,
+      "metadata": {}
     }
   ]
 }
@@ -42,18 +43,18 @@ Returns all tracked devices.
 ### Get Device
 
 ```
-GET /devices/{mac}
+GET /api/devices/{mac}
 ```
 
-Returns a single device by MAC address.
+Returns a single device by MAC address with computed online/offline status.
 
 ### Update Device
 
 ```
-PUT /devices/{mac}
+PUT /api/devices/{mac}
 ```
 
-**Requires IAM auth.** Updates allowed fields: `name`, `notify`, `device_type`.
+Updates allowed fields: `name`, `notify`, `device_type`.
 
 ```json
 {
@@ -65,31 +66,13 @@ PUT /devices/{mac}
 ### Delete Device
 
 ```
-DELETE /devices/{mac}
+DELETE /api/devices/{mac}
 ```
 
-**Requires IAM auth.** Removes a device from tracking.
+Removes a device from tracking.
 
-### Get Device History
+## Notes
 
-```
-GET /devices/{mac}/history
-```
-
-Returns event history for a device.
-
-### Get Stats
-
-```
-GET /stats
-```
-
-Returns network-wide statistics.
-
-### Get VLAN Stats
-
-```
-GET /stats/vlan/{vlan_id}
-```
-
-Returns statistics for a specific VLAN.
+- `current_state` is computed at read time from `online_until` — it is not stored in DynamoDB
+- Devices auto-expire after 14 days of inactivity via DynamoDB TTL
+- The API is served via CloudFront → Lambda function URL (OAC with SigV4)

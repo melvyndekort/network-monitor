@@ -21,7 +21,7 @@ Events flow through the system as JSON objects with a common schema.
 
 | Source | Description |
 |--------|-------------|
-| `data_collector` | ARP/DHCP polling from MikroTik |
+| `data_collector` | Wireless AP polling + MikroTik ARP (enriched with DHCP) |
 | `syslog_dhcp` | DHCP events from RouterOS syslog via Vector |
 | `manual_test` | Manual test events sent directly to SQS |
 
@@ -31,8 +31,8 @@ Events flow through the system as JSON objects with a common schema.
 
 | Type | Description | Trigger |
 |------|-------------|---------|
-| `device_discovered` | New MAC address seen for the first time | Data collector sees MAC not in known set (ARP or DHCP) |
-| `device_activity` | Known device still present on network | Data collector sees MAC already in known set (ARP or DHCP) |
+| `device_discovered` | New MAC address seen for the first time | Event-router Lambda finds MAC not in DynamoDB |
+| `device_activity` | Device present on network | Data collector sees MAC via AP wireless association or ARP table |
 
 ### DHCP Events
 

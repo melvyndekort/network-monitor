@@ -190,6 +190,14 @@ After fixing both, re-added `trusted_key_groups` to the `/api/*` behavior for si
 
 **Fix**: Data collector is now a pure sensor — polls MikroTik, sends `device_activity` for every device, every poll. No state, no decisions. The event-router Lambda checks DynamoDB to determine if a device is new (not found → create + route to `TOPIC_DISCOVERED`) or existing (found → update `last_seen`/`online_until` + route to `TOPIC_ACTIVITY`).
 
+### ~~OpenWrt AP polling for wireless presence~~ ✅ Done (2026-03-25)
+
+**Problem**: Using ARP + DHCP for presence was unreliable — DHCP leases persist after a device disconnects (bound for up to 1 hour), and ARP entries go stale within 30 seconds (shorter than the 60s poll interval). This caused devices to appear online when they were physically gone.
+
+**Fix**: Data collector now polls all 4 OpenWrt APs via ubus HTTP JSON-RPC (`hostapd.*.get_clients`) for associated wireless clients. This is the primary presence signal — AP associations drop immediately when a device disconnects. ARP is used for wired devices only. DHCP is used solely for IP/hostname enrichment, never as a presence signal.
+
+**AP setup**: Created `netmon` rpcd user on all 4 APs with read-only ACL for `hostapd.*.get_clients`. New env vars: `AP_HOSTS`, `AP_USER`, `AP_PASSWORD`.
+
 ### Grafana Dashboards`examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.
 
 ### Shared Lambda Libraries

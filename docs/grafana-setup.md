@@ -1,6 +1,6 @@
 # Grafana Dashboard Setup
 
-Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use the Infinity data source plugin to query the public API.
+Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use the Infinity data source plugin to query the REST API. Syslog data is available in Grafana Cloud Loki via Vector.
 
 ## Prerequisites
 
@@ -11,7 +11,8 @@ Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use th
 
 1. Install the **Infinity** plugin in Grafana
 2. Add a new Infinity data source
-3. Set the base URL to: `https://ys7ivwcdqf.execute-api.eu-west-1.amazonaws.com`
+3. Set the base URL to: `https://network-monitor.mdekort.nl/api`
+4. Configure authentication (CloudFront signed cookies required)
 
 ## Dashboard Ideas
 
@@ -30,8 +31,14 @@ Network Monitor data lives in DynamoDB. To visualize it in Grafana Cloud, use th
 ### VLAN Breakdown
 - One row per VLAN using `/devices` filtered by `last_vlan`
 
+## Syslog in Loki
+
+All RouterOS syslog is forwarded to Grafana Cloud Loki via Vector with labels:
+- `job = "vector-lmserver"`
+- `source = "syslog"`
+
 ## Notes
 
-- The API auto-refreshes data every 60 seconds from the data collector
+- The data collector polls every 60 seconds, so device data refreshes at that interval
 - DynamoDB event history has a 90-day TTL
-- Syslog data is also available in Grafana Cloud Loki (via Vector)
+- `current_state` is computed at read time from `online_until`
