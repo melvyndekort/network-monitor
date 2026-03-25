@@ -51,7 +51,8 @@ resource "aws_iam_role_policy" "event_router" {
         Action = "sns:Publish"
         Resource = [
           aws_sns_topic.device_discovered.arn,
-          aws_sns_topic.device_activity.arn
+          aws_sns_topic.device_activity.arn,
+          aws_sns_topic.notifications.arn
         ]
       },
       {

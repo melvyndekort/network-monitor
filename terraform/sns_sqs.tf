@@ -45,6 +45,14 @@ resource "aws_sns_topic" "device_activity" {
   }
 }
 
+resource "aws_sns_topic" "notifications" {
+  name = "network-monitor-notifications"
+
+  tags = {
+    Name = "network-monitor-notifications"
+  }
+}
+
 # SQS Queues for Lambda processors (fan-out from SNS)
 resource "aws_sqs_queue" "notifier" {
   name                       = "network-monitor-notifier"
@@ -95,8 +103,8 @@ resource "aws_sqs_queue" "metadata_enricher_dlq" {
 }
 
 # SNS to SQS subscriptions
-resource "aws_sns_topic_subscription" "device_discovered_to_notifier" {
-  topic_arn = aws_sns_topic.device_discovered.arn
+resource "aws_sns_topic_subscription" "notifications_to_notifier" {
+  topic_arn = aws_sns_topic.notifications.arn
   protocol  = "sqs"
   endpoint  = aws_sqs_queue.notifier.arn
 }
@@ -122,7 +130,7 @@ resource "aws_sqs_queue_policy" "notifier" {
       Resource = aws_sqs_queue.notifier.arn
       Condition = {
         ArnEquals = {
-          "aws:SourceArn" = aws_sns_topic.device_discovered.arn
+          "aws:SourceArn" = aws_sns_topic.notifications.arn
         }
       }
     }]

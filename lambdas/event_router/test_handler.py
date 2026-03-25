@@ -14,6 +14,7 @@ os.environ['EVENTS_TABLE'] = 'test-events'
 os.environ['DEDUP_TABLE'] = 'test-dedup'
 os.environ['TOPIC_DISCOVERED'] = 'arn:aws:sns:eu-west-1:123456789012:device-discovered'
 os.environ['TOPIC_ACTIVITY'] = 'arn:aws:sns:eu-west-1:123456789012:device-activity'
+os.environ['TOPIC_NOTIFICATIONS'] = 'arn:aws:sns:eu-west-1:123456789012:notifications'
 
 from moto import mock_aws
 import boto3
@@ -58,6 +59,7 @@ def aws_setup():
         sns = boto3.client('sns', region_name='eu-west-1')
         sns.create_topic(Name='device-discovered')
         sns.create_topic(Name='device-activity')
+        sns.create_topic(Name='notifications')
         
         yield dynamodb
 
@@ -111,7 +113,7 @@ def test_handler_new_device(aws_setup):
     devices_table = aws_setup.Table('test-devices')
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert 'Item' in response
-    assert response['Item']['notify'] is True
+    assert response['Item']['notify'] is False
 
 
 def test_handler_existing_device(aws_setup):

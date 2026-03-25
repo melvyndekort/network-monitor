@@ -15,6 +15,7 @@ dedup_table = dynamodb.Table(os.environ.get('DEDUP_TABLE', ''))
 sns = boto3.client('sns')
 TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
 TOPIC_ACTIVITY = os.environ.get('TOPIC_ACTIVITY', '')
+TOPIC_NOTIFICATIONS = os.environ.get('TOPIC_NOTIFICATIONS', '')
 ONLINE_TTL = 900  # 15 minutes
 DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 
@@ -41,17 +42,20 @@ def handler(event, context):
             # Store event
             put_event(normalized)
             
-            # Update device
+            # Update device and determine routing
+            now = int(time.time())
             device = get_device(normalized['mac'])
             if device:
+                was_offline = device.get('online_until', 0) < now
                 update_device_last_seen(normalized['mac'], normalized)
-                topic = TOPIC_ACTIVITY
+                if was_offline:
+                    normalized['new_state'] = 'online'
+                    sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
+                sns.publish(TopicArn=TOPIC_ACTIVITY, Message=json.dumps(normalized))
             else:
                 create_device(normalized)
-                topic = TOPIC_DISCOVERED
-            
-            # Route to SNS
-            sns.publish(TopicArn=topic, Message=json.dumps(normalized))
+                sns.publish(TopicArn=TOPIC_DISCOVERED, Message=json.dumps(normalized))
+                sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
     
     return {'statusCode': 200}
 
@@ -90,7 +94,7 @@ def create_device(event):
         'device_type': None,
         'last_ip': event.get('ip'),
         'last_vlan': event.get('vlan'),
-        'notify': True,
+        'notify': False,
         'first_seen': now,
         'last_seen': now,
         'online_until': now + ONLINE_TTL,
