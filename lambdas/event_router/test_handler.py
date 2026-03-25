@@ -88,13 +88,13 @@ def test_normalize_event_invalid():
 
 
 def test_handler_new_device(aws_setup):
-    """Test handler with new device."""
+    """Test handler routes to TOPIC_DISCOVERED when device not in DB."""
     event = {
         'Records': [{
             'body': json.dumps({
                 'timestamp': '2026-03-11T12:00:00Z',
-                'source': 'mikrotik_arp',
-                'event_type': 'device_discovered',
+                'source': 'data_collector',
+                'event_type': 'device_activity',
                 'mac': 'aa:bb:cc:dd:ee:ff',
                 'ip': '10.204.10.100',
                 'vlan': 10,

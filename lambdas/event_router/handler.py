@@ -45,11 +45,12 @@ def handler(event, context):
             device = get_device(normalized['mac'])
             if device:
                 update_device_last_seen(normalized['mac'], normalized)
+                topic = TOPIC_ACTIVITY
             else:
                 create_device(normalized)
+                topic = TOPIC_DISCOVERED
             
             # Route to SNS
-            topic = TOPIC_DISCOVERED if normalized['event_type'] == 'device_discovered' else TOPIC_ACTIVITY
             sns.publish(TopicArn=topic, Message=json.dumps(normalized))
     
     return {'statusCode': 200}

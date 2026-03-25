@@ -184,19 +184,11 @@ Network-monitor can now use `terraform_remote_state` to read from `mdekort-tfsta
 
 After fixing both, re-added `trusted_key_groups` to the `/api/*` behavior for signed cookie auth. Verified: direct Lambda URL → 403, CloudFront without cookies → 403, CloudFront with cookies → 200.
 
-### Move new-device detection from data collector to event-router Lambda
+### ~~Move new-device detection from data collector to event-router Lambda~~ ✅ Done (2026-03-25)
 
-**Problem**: The data collector currently decides whether a device is "new" by tracking `known_macs` in memory. It sends `device_discovered` for new MACs and `device_activity` for known ones. This is wrong for several reasons:
+**Problem**: The data collector was deciding whether a device is "new" by tracking `known_macs` in memory, which reset on container restart causing false notification floods.
 
-1. **State resets on restart**: When the container restarts, `known_macs` is empty, so every device gets `device_discovered` — triggering a flood of false "new device" notifications (67 devices all at once).
-2. **Duplicates event-router logic**: The event-router Lambda already checks DynamoDB to determine if a device exists. The collector's local tracking is redundant and can disagree with the actual database state.
-3. **Wrong responsibility boundary**: The collector's job is to report what's on the network. Whether a device is "new" is a business decision that belongs in the event-router, which has access to the devices table.
-
-**Fix**:
-- **Data collector**: Always send `device_activity` for every device seen. Remove `known_macs` tracking entirely. The collector becomes a pure sensor — it reports what it sees, nothing more.
-- **Event-router Lambda**: On receiving `device_activity`, check DynamoDB for the MAC. If not found, treat it as a new device (create record, publish to `device-discovered` SNS topic for notifications/enrichment). If found, update `last_seen`/`online_until`.
-
-**Impact on heartbeat**: The heartbeat logic (send all devices every 5 minutes, skip unchanged devices between heartbeats) stays the same — it just sends `device_activity` for everything instead of distinguishing between discovered/activity.
+**Fix**: Data collector is now a pure sensor — polls MikroTik, sends `device_activity` for every device, every poll. No state, no decisions. The event-router Lambda checks DynamoDB to determine if a device is new (not found → create + route to `TOPIC_DISCOVERED`) or existing (found → update `last_seen`/`online_until` + route to `TOPIC_ACTIVITY`).
 
 ### Grafana Dashboards`examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.
 

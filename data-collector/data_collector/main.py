@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
-HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "300"))
 
 
 def build_dhcp_lookup(client):
@@ -46,24 +45,16 @@ def collect_devices(client):
     return devices
 
 
-def poll(devices, known_macs, send_events, heartbeat):
-    """Send discovery events for new MACs. On heartbeat, send activity for all."""
-    events = []
-
-    new_macs = set(devices) - known_macs
-    for mac in new_macs:
-        d = devices[mac]
-        events.append(make_event("device_discovered", mac, d["ip"], d["hostname"]))
-
-    if heartbeat:
-        for mac in set(devices) - new_macs:
-            d = devices[mac]
-            events.append(make_event("device_activity", mac, d["ip"], d["hostname"]))
-
+def poll(client, send_events):
+    """Poll devices and send all events to SQS."""
+    devices = collect_devices(client)
+    events = [
+        make_event("device_activity", mac, d["ip"], d["hostname"])
+        for mac, d in devices.items()
+    ]
     if events:
         send_events(events)
-
-    return set(devices), len(events)
+    return len(events)
 
 
 def main():
@@ -81,21 +72,13 @@ def main():
         sys.exit(1)
 
     client = MikroTikClient(host, user, password)
-    sqs_client = create_sqs_client(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
-    known_macs = set()
-    last_heartbeat = 0
+    send_events = create_sqs_client(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
 
-    logger.info("Starting data collector (poll every %ds, heartbeat every %ds)", POLL_INTERVAL, HEARTBEAT_INTERVAL)
+    logger.info("Starting data collector (poll every %ds)", POLL_INTERVAL)
     while True:
         try:
-            now = time.monotonic()
-            heartbeat = (now - last_heartbeat) >= HEARTBEAT_INTERVAL
-            devices = collect_devices(client)
-            known_macs, sent = poll(devices, known_macs, sqs_client, heartbeat)
-            if heartbeat:
-                last_heartbeat = now
-            hb_tag = " (heartbeat)" if heartbeat else ""
-            logger.info("Poll complete: %d devices, %d events sent%s", len(known_macs), sent, hb_tag)
+            sent = poll(client, send_events)
+            logger.info("Poll complete: %d events sent", sent)
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")
         time.sleep(POLL_INTERVAL)
