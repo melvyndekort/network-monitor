@@ -42,7 +42,10 @@ def collect_devices(mikrotik, openwrt):
     arp_macs = {e["mac"].upper() for e in mikrotik.get_arp()}
     enrichment = build_enrichment_lookup(mikrotik)
 
+    wired_only = arp_macs - wireless_macs
     active_macs = wireless_macs | arp_macs
+    logger.info("Discovered %d wireless, %d wired-only, %d total active",
+                len(wireless_macs), len(wired_only), len(active_macs))
 
     devices = {}
     for mac in active_macs:

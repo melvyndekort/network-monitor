@@ -27,7 +27,9 @@ class OpenWrtClient:
         macs = set()
         for host in self.hosts:
             try:
-                macs.update(self.query_ap(host))
+                ap_macs = self.query_ap(host)
+                logger.info("AP %s: %d clients", host, len(ap_macs))
+                macs.update(ap_macs)
             except (OSError, ValueError, KeyError):
                 logger.exception("Failed to query AP %s", host)
         return macs
