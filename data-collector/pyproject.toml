@@ -3,7 +3,7 @@ name = "data-collector"
 version = "0.1.0"
 description = "MikroTik network device data collector for network-monitor"
 authors = [{name = "Melvyn de Kort", email = "melvyn@mdekort.nl"}]
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "librouteros>=3.2",
     "boto3>=1.35",
