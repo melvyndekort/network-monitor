@@ -1,9 +1,12 @@
 """Notification sender Lambda - Send alerts via Apprise."""
 import json
+import logging
 import os
 import time
 import urllib3
 import boto3
+
+logger = logging.getLogger(__name__)
 
 # DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
@@ -16,32 +19,42 @@ APPRISE_URL = os.environ.get('APPRISE_URL', '')
 
 # CF Access credentials (fetched once per container)
 ssm = boto3.client('ssm')
-CF_ACCESS_CLIENT_ID = ssm.get_parameter(Name='/network-monitor/cf-access-client-id', WithDecryption=True)['Parameter']['Value']
-CF_ACCESS_CLIENT_SECRET = ssm.get_parameter(Name='/network-monitor/cf-access-client-secret', WithDecryption=True)['Parameter']['Value']
+CF_ACCESS_CLIENT_ID = ssm.get_parameter(
+    Name='/network-monitor/cf-access-client-id',
+    WithDecryption=True
+)['Parameter']['Value']
+CF_ACCESS_CLIENT_SECRET = ssm.get_parameter(
+    Name='/network-monitor/cf-access-client-secret',
+    WithDecryption=True
+)['Parameter']['Value']
 
 
-def handler(event, context):
+def handler(event, _context):
     """Send notifications for device events."""
     for record in event['Records']:
         body = json.loads(record['body'])
         message = json.loads(body['Message'])
-        
+
         mac = message['mac']
         device = get_device(mac)
-        
-        if not device or not device.get('notify'):
+
+        if not device:
             continue
-        
+
+        is_new_device = 'new_state' not in message
+        if not is_new_device and not device.get('notify'):
+            continue
+
         event_type = message.get('event_type') or message.get('new_state')
         throttle_key = f"{mac}#{event_type}"
-        
+
         if check_throttle(throttle_key):
             continue
-        
+
         title, body_text = format_notification(device, message)
         send_apprise(title, body_text)
         set_throttle(throttle_key, 3600)
-    
+
     return {'statusCode': 200}
 
 
@@ -70,20 +83,19 @@ def set_throttle(key, duration):
 def format_notification(device, message):
     """Format notification title and body."""
     name = device.get('name') or device['mac']
-    
+
     if 'new_state' in message:
         if message['new_state'] == 'offline':
             return ('📴 Device Offline', f"{name} went offline")
-        else:
-            return ('✅ Device Online', f"{name} is back online")
-    else:
-        return (
-            '🆕 New Device Detected',
-            f"MAC: {device['mac']}\n"
-            f"IP: {device.get('last_ip', 'Unknown')}\n"
-            f"VLAN: {device.get('last_vlan', 'Unknown')}\n"
-            f"Manufacturer: {device.get('manufacturer', 'Unknown')}"
-        )
+        return ('✅ Device Online', f"{name} is back online")
+
+    return (
+        '🆕 New Device Detected',
+        f"MAC: {device['mac']}\n"
+        f"IP: {device.get('last_ip', 'Unknown')}\n"
+        f"VLAN: {device.get('last_vlan', 'Unknown')}\n"
+        f"Manufacturer: {device.get('manufacturer', 'Unknown')}"
+    )
 
 
 def send_apprise(title, body):
@@ -92,12 +104,14 @@ def send_apprise(title, body):
         http.request(
             'POST',
             f"{APPRISE_URL}/notify/apprise",
-            body=json.dumps({'title': title, 'body': body, 'tag': 'homelab'}),
+            body=json.dumps({
+                'title': title, 'body': body, 'tag': 'homelab'
+            }),
             headers={
                 'Content-Type': 'application/json',
                 'CF-Access-Client-Id': CF_ACCESS_CLIENT_ID,
                 'CF-Access-Client-Secret': CF_ACCESS_CLIENT_SECRET,
             }
         )
-    except Exception as e:
-        print(f"Failed to send notification: {e}")
+    except urllib3.exceptions.HTTPError:
+        logger.exception("Failed to send notification")
