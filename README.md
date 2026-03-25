@@ -50,7 +50,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed component document
 - **Presence Tracking**: TTL-based `online_until` timestamp, computed at read time — no state machine
 - **Device Auto-Expiry**: Devices deleted after 14 days of inactivity via DynamoDB TTL
 - **Notifications**: Apprise integration with per-device toggle and 1-hour throttling
-- **Manufacturer Lookup**: Automatic MAC vendor identification via macvendors.com API
+- **Manufacturer Lookup**: Automatic MAC vendor identification via macvendors.com, maclookup.app, and macvendors.co APIs (fallback chain)
 - **REST API**: CRUD operations via CloudFront + Lambda function URL (OAC/SigV4)
 - **Bootstrap 5 UI**: Dark theme dashboard with inline editing at `https://network-monitor.mdekort.nl`
 - **Signed Cookie Auth**: Cognito login → CloudFront signed cookies

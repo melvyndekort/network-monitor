@@ -219,7 +219,8 @@ message_group_id = "{{ mac }}"
 **Trigger**: SQS (notifier-queue), batch size 5
 
 **Responsibilities**:
-- Check if device has `notify` flag enabled
+- New device discovery notifications always sent (bypass per-device flag)
+- Check if device has `notify` flag enabled (for state change notifications)
 - Check throttle table (1 hour cooldown per mac+event_type)
 - Format notification message
 - HTTP POST to Apprise via Cloudflare Tunnel (with CF Access service token)
@@ -233,13 +234,14 @@ message_group_id = "{{ mac }}"
 
 **Purpose**: Enrich device data with manufacturer info
 
-**Trigger**: SQS (metadata-enricher-queue), batch size 2
+**Trigger**: SQS (metadata-enricher-queue), batch size 2; EventBridge (daily retry)
 
 **Responsibilities**:
-- Lookup manufacturer via macvendors.com API
+- Lookup manufacturer via fallback chain: macvendors.com → maclookup.app → macvendors.co
 - Skip if manufacturer already set
 - Rate limited (1 second delay between lookups)
 - Update DynamoDB devices table
+- Daily scheduled retry for devices with unknown/missing manufacturer
 
 **Configuration**:
 - Memory: 256 MB

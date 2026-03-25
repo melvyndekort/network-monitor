@@ -18,6 +18,10 @@
 - **DHCP lease discovery** (2026-03-23): Data collector now emits events for devices with active DHCP leases not seen in ARP table, catching transient devices that connect briefly between poll cycles.
 - **Apprise notifications** (2026-03-23): Fixed Apprise connectivity — exposed via Cloudflare Tunnel with Zero Trust service token auth. CF Access credentials stored in SSM Parameter Store. Uses stateful config key `/notify/apprise` with `homelab` tag.
 - **Event batching** (2026-03-23): Data collector emits one batch message per poll instead of one per device. Poll interval increased from 30s to 60s. Reduces SQS messages from ~5.7M/month to ~43K/month.
+- **Notification fix** (2026-03-25): New device discovery notifications now bypass the per-device `notify` flag. Previously, new devices were created with `notify: False` causing all discovery alerts to be silently dropped.
+- **Pylint CI enforcement** (2026-03-25): Added pylint step to deploy-lambda workflow. All Lambda handlers fixed to 10/10. Pylint added as dev dependency to all Lambda projects.
+- **Dashboard metrics** (2026-03-25): Added "Monitored" and "Unnamed" device counts to the UI stats bar.
+- **Multi-API manufacturer lookup** (2026-03-25): Fallback chain of macvendors.com → maclookup.app → macvendors.co. Added daily EventBridge retry for devices with unknown/missing manufacturer.
 - **Device auto-expiry** (2026-03-23): Devices automatically deleted after 14 days of inactivity via DynamoDB TTL. Re-discovered as new devices when they return.
 - **Vector fixes** (2026-03-23): Added `filter_json` transform to drop non-JSON log lines. Removed `dedupe` transform that was permanently suppressing events.
 
