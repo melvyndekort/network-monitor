@@ -42,13 +42,18 @@ class MikroTikClient:
                 return []
 
     def get_arp(self):
-        """Return ARP table entries as list of dicts with mac, ip, interface."""
+        """Return ARP table entries as list of dicts with mac, ip, interface.
+
+        Only includes entries with active statuses (reachable, delay, permanent).
+        Excludes stale and failed entries.
+        """
+        active_statuses = {"reachable", "delay", "permanent"}
         entries = []
         for row in self._query("ip", "arp"):
             mac = row.get("mac-address")
             if not mac or mac == "00:00:00:00:00:00":
                 continue
-            if row.get("status") == "stale":
+            if row.get("status") not in active_statuses:
                 continue
             entries.append({
                 "mac": mac,

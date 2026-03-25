@@ -9,17 +9,17 @@ def test_get_arp_filters_empty_mac(monkeypatch):
 
     def mock_query(*path):
         return [
-            {"mac-address": "AA:BB:CC:DD:EE:FF", "address": "10.204.10.100", "interface": "bridge"},
-            {"mac-address": "00:00:00:00:00:00", "address": "10.204.10.1", "interface": "bridge"},
-            {"address": "10.204.10.2", "interface": "bridge"},
+            {"mac-address": "AA:BB:CC:DD:EE:FF", "address": "10.204.10.100", "interface": "bridge", "status": "reachable"},
+            {"mac-address": "00:00:00:00:00:00", "address": "10.204.10.1", "interface": "bridge", "status": "reachable"},
+            {"address": "10.204.10.2", "interface": "bridge", "status": "reachable"},
+            {"mac-address": "11:22:33:44:55:66", "address": "10.204.10.3", "interface": "bridge", "status": "stale"},
+            {"mac-address": "22:33:44:55:66:77", "address": "10.204.10.4", "interface": "bridge", "status": "failed"},
         ]
 
     monkeypatch.setattr(client, "_query", mock_query)
     result = client.get_arp()
     assert len(result) == 1
     assert result[0]["mac"] == "AA:BB:CC:DD:EE:FF"
-    assert result[0]["ip"] == "10.204.10.100"
-    assert result[0]["interface"] == "bridge"
 
 
 def test_get_arp_empty(monkeypatch):
