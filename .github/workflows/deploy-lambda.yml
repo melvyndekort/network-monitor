@@ -25,6 +25,8 @@ jobs:
         working-directory: ${{ inputs.lambda_dir }}
       - run: uv run pytest
         working-directory: ${{ inputs.lambda_dir }}
+      - run: uv run pylint handler.py
+        working-directory: ${{ inputs.lambda_dir }}
       - run: |
           cd ${{ inputs.lambda_dir }}
           uv export --no-dev --no-hashes -o requirements.txt

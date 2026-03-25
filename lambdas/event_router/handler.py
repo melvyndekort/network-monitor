@@ -2,7 +2,7 @@
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import boto3
 
 # DynamoDB setup (initialized once per container)
@@ -20,7 +20,7 @@ ONLINE_TTL = 900  # 15 minutes
 DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 
 
-def handler(event, context):
+def handler(event, _context):
     """Process events from SQS and route to appropriate SNS topics."""
     for record in event['Records']:
         body = json.loads(record['body'])
@@ -29,35 +29,55 @@ def handler(event, context):
         raw_events = body.get('events', [body])
 
         for raw in raw_events:
-            normalized = normalize_event(raw)
-            if not normalized:
-                continue
-            
-            # Deduplication
-            dedup_key = f"{normalized['mac']}#{normalized['event_type']}#{int(time.time() // 30)}"
-            if check_dedup(dedup_key):
-                continue
-            set_dedup(dedup_key)
-            
-            # Store event
-            put_event(normalized)
-            
-            # Update device and determine routing
-            now = int(time.time())
-            device = get_device(normalized['mac'])
-            if device:
-                was_offline = device.get('online_until', 0) < now
-                update_device_last_seen(normalized['mac'], normalized)
-                if was_offline:
-                    normalized['new_state'] = 'online'
-                    sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
-                sns.publish(TopicArn=TOPIC_ACTIVITY, Message=json.dumps(normalized))
-            else:
-                create_device(normalized)
-                sns.publish(TopicArn=TOPIC_DISCOVERED, Message=json.dumps(normalized))
-                sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
-    
+            _process_event(raw)
+
     return {'statusCode': 200}
+
+
+def _process_event(raw):
+    """Process a single raw event."""
+    normalized = normalize_event(raw)
+    if not normalized:
+        return
+
+    # Deduplication
+    dedup_key = (
+        f"{normalized['mac']}#{normalized['event_type']}"
+        f"#{int(time.time() // 30)}"
+    )
+    if check_dedup(dedup_key):
+        return
+    set_dedup(dedup_key)
+
+    # Store event
+    put_event(normalized)
+
+    # Update device and determine routing
+    now = int(time.time())
+    device = get_device(normalized['mac'])
+    if device:
+        was_offline = device.get('online_until', 0) < now
+        update_device_last_seen(normalized['mac'], normalized)
+        if was_offline:
+            normalized['new_state'] = 'online'
+            sns.publish(
+                TopicArn=TOPIC_NOTIFICATIONS,
+                Message=json.dumps(normalized)
+            )
+        sns.publish(
+            TopicArn=TOPIC_ACTIVITY,
+            Message=json.dumps(normalized)
+        )
+    else:
+        create_device(normalized)
+        sns.publish(
+            TopicArn=TOPIC_DISCOVERED,
+            Message=json.dumps(normalized)
+        )
+        sns.publish(
+            TopicArn=TOPIC_NOTIFICATIONS,
+            Message=json.dumps(normalized)
+        )
 
 
 def normalize_event(body):
@@ -108,7 +128,10 @@ def update_device_last_seen(mac, event):
     now = int(time.time())
     devices_table.update_item(
         Key={'mac': mac},
-        UpdateExpression='SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou, #t = :ttl',
+        UpdateExpression=(
+            'SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan,'
+            ' online_until = :ou, #t = :ttl'
+        ),
         ExpressionAttributeNames={'#t': 'ttl'},
         ExpressionAttributeValues={
             ':ls': now,
@@ -123,9 +146,13 @@ def update_device_last_seen(mac, event):
 def put_event(event):
     """Store event in DynamoDB."""
     ttl = int(time.time()) + (90 * 24 * 60 * 60)
+    ts = event['timestamp'].replace('Z', '+00:00')
     events_table.put_item(Item={
         'mac': event['mac'],
-        'timestamp': int(datetime.fromisoformat(event['timestamp'].replace('Z', '+00:00')).timestamp() * 1000),
+        'timestamp': int(
+            datetime.fromisoformat(ts)
+            .replace(tzinfo=timezone.utc).timestamp() * 1000
+        ),
         'event_type': event['event_type'],
         'ip': event.get('ip'),
         'vlan': event.get('vlan'),

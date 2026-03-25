@@ -15,25 +15,25 @@ TOPIC_STATE_CHANGED = os.environ.get('TOPIC_STATE_CHANGED', '')
 OFFLINE_THRESHOLD = 900  # 15 minutes
 
 
-def handler(event, context):
+def handler(event, _context):
     """Track device presence and state transitions."""
     for record in event['Records']:
         body = json.loads(record['body'])
         message = json.loads(body['Message'])
-        
+
         mac = message['mac']
         device = get_device(mac)
-        
+
         if not device:
             continue
-        
+
         old_state = device.get('current_state', 'unknown')
         new_state = determine_state(device)
-        
+
         if old_state != new_state:
             update_state(mac, new_state)
             publish_state_change(mac, old_state, new_state)
-    
+
     return {'statusCode': 200}
 
 
@@ -55,14 +55,14 @@ def update_state(mac, state):
     now = int(time.time())
     update_expr = 'SET current_state = :state'
     expr_values = {':state': state}
-    
+
     if state == 'online':
         update_expr += ', last_online = :time'
         expr_values[':time'] = now
     elif state == 'offline':
         update_expr += ', last_offline = :time'
         expr_values[':time'] = now
-    
+
     devices_table.update_item(
         Key={'mac': mac},
         UpdateExpression=update_expr,

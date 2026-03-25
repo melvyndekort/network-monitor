@@ -47,7 +47,7 @@ def test_lookup_manufacturer_success(mock_http):
 @patch('handler.http')
 def test_lookup_manufacturer_failure(mock_http):
     """Test failed manufacturer lookup."""
-    mock_http.request.side_effect = Exception('Network error')
+    mock_http.request.side_effect = OSError('Network error')
     
     result = lookup_manufacturer('AA:BB:CC:DD:EE:FF')
     

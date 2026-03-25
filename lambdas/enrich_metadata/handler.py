@@ -1,9 +1,12 @@
 """Metadata enricher Lambda - Lookup manufacturer."""
 import json
-import time
-import urllib3
-import boto3
+import logging
 import os
+import time
+import boto3
+import urllib3
+
+logger = logging.getLogger(__name__)
 
 # DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource('dynamodb')
@@ -13,24 +16,24 @@ devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 http = urllib3.PoolManager()
 
 
-def handler(event, context):
+def handler(event, _context):
     """Enrich device metadata."""
     for record in event['Records']:
         body = json.loads(record['body'])
         message = json.loads(body['Message'])
-        
+
         mac = message['mac']
         device = get_device(mac)
-        
+
         if not device or device.get('manufacturer'):
             continue
-        
+
         time.sleep(1)  # Rate limit
-        
+
         manufacturer = lookup_manufacturer(mac)
         if manufacturer:
             update_manufacturer(mac, manufacturer)
-    
+
     return {'statusCode': 200}
 
 
@@ -52,9 +55,11 @@ def update_manufacturer(mac, manufacturer):
 def lookup_manufacturer(mac):
     """Lookup manufacturer via MAC address."""
     try:
-        response = http.request('GET', f"https://api.macvendors.com/{mac}")
+        response = http.request(
+            'GET', f"https://api.macvendors.com/{mac}"
+        )
         if response.status == 200:
             return response.data.decode('utf-8')
-    except Exception as e:
-        print(f"Manufacturer lookup failed: {e}")
+    except (urllib3.exceptions.HTTPError, OSError):
+        logger.exception("Manufacturer lookup failed")
     return 'Unknown'
