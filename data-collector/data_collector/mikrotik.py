@@ -48,6 +48,8 @@ class MikroTikClient:
             mac = row.get("mac-address")
             if not mac or mac == "00:00:00:00:00:00":
                 continue
+            if row.get("status") == "stale":
+                continue
             entries.append({
                 "mac": mac,
                 "ip": row.get("address"),
