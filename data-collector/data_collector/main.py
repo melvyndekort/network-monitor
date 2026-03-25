@@ -8,7 +8,7 @@ from librouteros.exceptions import LibRouterosError
 
 from data_collector.mikrotik import MikroTikClient
 from data_collector.models import make_event
-from data_collector.sqs import SQSClient
+from data_collector.sqs import create_sqs_client
 
 FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
@@ -46,7 +46,7 @@ def collect_devices(client):
     return devices
 
 
-def poll(devices, known_macs, sqs_client, heartbeat):
+def poll(devices, known_macs, send_events, heartbeat):
     """Send discovery events for new MACs. On heartbeat, send activity for all."""
     events = []
 
@@ -61,7 +61,7 @@ def poll(devices, known_macs, sqs_client, heartbeat):
             events.append(make_event("device_activity", mac, d["ip"], d["hostname"]))
 
     if events:
-        sqs_client.send_events(events)
+        send_events(events)
 
     return set(devices), len(events)
 
@@ -81,7 +81,7 @@ def main():
         sys.exit(1)
 
     client = MikroTikClient(host, user, password)
-    sqs_client = SQSClient(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
+    sqs_client = create_sqs_client(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
     known_macs = set()
     last_heartbeat = 0
 
@@ -94,7 +94,8 @@ def main():
             known_macs, sent = poll(devices, known_macs, sqs_client, heartbeat)
             if heartbeat:
                 last_heartbeat = now
-            logger.info("Poll complete: %d devices, %d events sent%s", len(known_macs), sent, " (heartbeat)" if heartbeat else "")
+            hb_tag = " (heartbeat)" if heartbeat else ""
+            logger.info("Poll complete: %d devices, %d events sent%s", len(known_macs), sent, hb_tag)
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")
         time.sleep(POLL_INTERVAL)
