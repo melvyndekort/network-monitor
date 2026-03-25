@@ -20,9 +20,14 @@ POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
 
 def build_enrichment_lookup(client):
     """Build mac -> {ip, hostname} from ARP + DHCP for enrichment."""
-    dhcp = {l["mac"].upper(): l for l in client.get_dhcp_leases()}
+    return build_enrichment_lookup_from(client.get_arp(), client.get_dhcp_leases())
+
+
+def build_enrichment_lookup_from(arp_entries, dhcp_leases):
+    """Build mac -> {ip, hostname} from pre-fetched ARP + DHCP data."""
+    dhcp = {l["mac"].upper(): l for l in dhcp_leases}
     lookup = {}
-    for entry in client.get_arp():
+    for entry in arp_entries:
         mac = entry["mac"].upper()
         lookup[mac] = {"ip": entry["ip"], "hostname": dhcp.get(mac, {}).get("hostname")}
     for mac, lease in dhcp.items():
@@ -39,8 +44,12 @@ def collect_devices(mikrotik, openwrt):
     used solely for IP/hostname enrichment.
     """
     wireless_macs = openwrt.get_associated_macs()
-    arp_macs = {e["mac"].upper() for e in mikrotik.get_arp()}
-    enrichment = build_enrichment_lookup(mikrotik)
+    arp_entries = mikrotik.get_arp()
+    arp_macs = {e["mac"].upper() for e in arp_entries}
+    dhcp_leases = mikrotik.get_dhcp_leases()
+    logger.info("MikroTik: %d ARP entries, %d DHCP leases", len(arp_entries), len(dhcp_leases))
+
+    enrichment = build_enrichment_lookup_from(arp_entries, dhcp_leases)
 
     wired_only = arp_macs - wireless_macs
     active_macs = wireless_macs | arp_macs
