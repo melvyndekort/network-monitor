@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "librouteros>=3.2",
     "boto3>=1.35",
-    "urllib3>=2.0",
+    "influxdb-client>=1.40",
 ]
 
 [project.optional-dependencies]

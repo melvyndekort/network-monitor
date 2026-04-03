@@ -2,47 +2,43 @@
 
 import logging
 
-import urllib3
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
+from influxdb_client.rest import ApiException
 
 logger = logging.getLogger(__name__)
 
 
 def create_influxdb_writer(url, token, org, bucket):
     """Create a function that writes device presence points to InfluxDB."""
-    http = urllib3.PoolManager()
-    write_url = f"{url}/api/v2/write?org={org}&bucket={bucket}&precision=s"
-    headers = {
-        "Authorization": f"Token {token}",
-        "Content-Type": "text/plain",
-    }
+    client = InfluxDBClient(url=url, token=token, org=org)
+    write_api = client.write_api(write_options=SYNCHRONOUS)
 
     def write_presence(devices, timestamp):
-        """Write one point per active device in line protocol format."""
-        lines = []
-        for mac, info in devices.items():
-            tags = f"mac={mac}"
-            if info.get("vlan"):
-                tags += f",vlan={info['vlan']}"
-            fields = "online=1i"
-            if info.get("ip"):
-                fields += f',ip="{info["ip"]}"'
-            if info.get("hostname"):
-                fields += f',hostname="{info["hostname"]}"'
-            lines.append(f"device_presence,{tags} {fields} {timestamp}")
-
-        if not lines:
+        """Write one point per active device."""
+        if not devices:
             return
 
-        body = "\n".join(lines)
+        points = []
+        for mac, info in devices.items():
+            point = (
+                Point("device_presence")
+                .tag("mac", mac)
+                .field("online", 1)
+                .time(timestamp)
+            )
+            if info.get("vlan"):
+                point = point.tag("vlan", str(info["vlan"]))
+            if info.get("ip"):
+                point = point.field("ip", info["ip"])
+            if info.get("hostname"):
+                point = point.field("hostname", info["hostname"])
+            points.append(point)
+
         try:
-            resp = http.request("POST", write_url, body=body.encode(), headers=headers)
-            if resp.status != 204:
-                logger.error(
-                    "InfluxDB write failed: %s %s", resp.status, resp.data.decode()
-                )
-            else:
-                logger.info("InfluxDB: wrote %d presence points", len(lines))
-        except urllib3.exceptions.HTTPError:
+            write_api.write(bucket=bucket, record=points)
+            logger.info("InfluxDB: wrote %d presence points", len(points))
+        except (ApiException, OSError):
             logger.exception("InfluxDB write error")
 
     return write_presence
