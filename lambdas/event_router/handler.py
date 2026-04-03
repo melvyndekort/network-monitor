@@ -17,6 +17,7 @@ TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
 TOPIC_NOTIFICATIONS = os.environ.get('TOPIC_NOTIFICATIONS', '')
 ONLINE_TTL = 900  # 15 minutes
 DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
+OFFLINE_GRACE = 1800  # 30 minutes before online notification
 
 
 def handler(event, _context):
@@ -62,8 +63,9 @@ def _route_event(normalized, now):
     device = get_device(normalized['mac'])
     if device:
         was_offline = device.get('online_until', 0) < now
+        offline_long_enough = device.get('online_until', 0) < now - OFFLINE_GRACE
         update_device_last_seen(normalized['mac'], normalized)
-        if was_offline:
+        if was_offline and offline_long_enough:
             normalized['new_state'] = 'online'
             sns.publish(
                 TopicArn=TOPIC_NOTIFICATIONS,
