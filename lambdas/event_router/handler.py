@@ -14,7 +14,6 @@ dedup_table = dynamodb.Table(os.environ.get('DEDUP_TABLE', ''))
 # SNS setup
 sns = boto3.client('sns')
 TOPIC_DISCOVERED = os.environ.get('TOPIC_DISCOVERED', '')
-TOPIC_ACTIVITY = os.environ.get('TOPIC_ACTIVITY', '')
 TOPIC_NOTIFICATIONS = os.environ.get('TOPIC_NOTIFICATIONS', '')
 ONLINE_TTL = 900  # 15 minutes
 DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
@@ -22,38 +21,44 @@ DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 
 def handler(event, _context):
     """Process events from SQS and route to appropriate SNS topics."""
+    all_events = []
     for record in event['Records']:
         body = json.loads(record['body'])
-
-        # Support batch messages ({"events": [...]}) and single events
         raw_events = body.get('events', [body])
-
         for raw in raw_events:
-            _process_event(raw)
+            normalized = normalize_event(raw)
+            if normalized:
+                all_events.append(normalized)
+
+    # Deduplicate
+    now_window = int(time.time() // 30)
+    dedup_keys = {}
+    unique_events = []
+    for evt in all_events:
+        key = f"{evt['mac']}#{evt['event_type']}#{now_window}"
+        if key not in dedup_keys and not check_dedup(key):
+            dedup_keys[key] = True
+            unique_events.append(evt)
+
+    if not unique_events:
+        return {'statusCode': 200}
+
+    # Batch write dedup keys
+    batch_write_dedup(list(dedup_keys.keys()))
+
+    # Batch write events
+    batch_write_events(unique_events)
+
+    # Route each event (device lookups + SNS publishes)
+    now = int(time.time())
+    for normalized in unique_events:
+        _route_event(normalized, now)
 
     return {'statusCode': 200}
 
 
-def _process_event(raw):
-    """Process a single raw event."""
-    normalized = normalize_event(raw)
-    if not normalized:
-        return
-
-    # Deduplication
-    dedup_key = (
-        f"{normalized['mac']}#{normalized['event_type']}"
-        f"#{int(time.time() // 30)}"
-    )
-    if check_dedup(dedup_key):
-        return
-    set_dedup(dedup_key)
-
-    # Store event
-    put_event(normalized)
-
-    # Update device and determine routing
-    now = int(time.time())
+def _route_event(normalized, now):
+    """Route a single event to appropriate SNS topics."""
     device = get_device(normalized['mac'])
     if device:
         was_offline = device.get('online_until', 0) < now
@@ -64,10 +69,6 @@ def _process_event(raw):
                 TopicArn=TOPIC_NOTIFICATIONS,
                 Message=json.dumps(normalized)
             )
-        sns.publish(
-            TopicArn=TOPIC_ACTIVITY,
-            Message=json.dumps(normalized)
-        )
     else:
         create_device(normalized)
         sns.publish(
@@ -143,31 +144,35 @@ def update_device_last_seen(mac, event):
     )
 
 
-def put_event(event):
-    """Store event in DynamoDB."""
+def batch_write_events(events):
+    """Batch write events to DynamoDB."""
     ttl = int(time.time()) + (90 * 24 * 60 * 60)
-    ts = event['timestamp'].replace('Z', '+00:00')
-    events_table.put_item(Item={
-        'mac': event['mac'],
-        'timestamp': int(
-            datetime.fromisoformat(ts)
-            .replace(tzinfo=timezone.utc).timestamp() * 1000
-        ),
-        'event_type': event['event_type'],
-        'ip': event.get('ip'),
-        'vlan': event.get('vlan'),
-        'metadata': event.get('metadata', {}),
-        'ttl': ttl
-    })
+    with events_table.batch_writer() as batch:
+        for event in events:
+            ts = event['timestamp'].replace('Z', '+00:00')
+            batch.put_item(Item={
+                'mac': event['mac'],
+                'timestamp': int(
+                    datetime.fromisoformat(ts)
+                    .replace(tzinfo=timezone.utc).timestamp() * 1000
+                ),
+                'event_type': event['event_type'],
+                'ip': event.get('ip'),
+                'vlan': event.get('vlan'),
+                'metadata': event.get('metadata', {}),
+                'ttl': ttl
+            })
+
+
+def batch_write_dedup(keys):
+    """Batch write dedup keys to DynamoDB."""
+    ttl = int(time.time()) + 300
+    with dedup_table.batch_writer() as batch:
+        for key in keys:
+            batch.put_item(Item={'dedup_key': key, 'ttl': ttl})
 
 
 def check_dedup(key):
     """Check if event is duplicate."""
     response = dedup_table.get_item(Key={'dedup_key': key})
     return 'Item' in response
-
-
-def set_dedup(key):
-    """Mark event as processed."""
-    ttl = int(time.time()) + 300
-    dedup_table.put_item(Item={'dedup_key': key, 'ttl': ttl})

@@ -16,7 +16,6 @@ resource "aws_lambda_function" "event_router" {
       EVENTS_TABLE        = aws_dynamodb_table.device_events.name
       DEDUP_TABLE         = aws_dynamodb_table.deduplication.name
       TOPIC_DISCOVERED    = aws_sns_topic.device_discovered.arn
-      TOPIC_ACTIVITY      = aws_sns_topic.device_activity.arn
       TOPIC_NOTIFICATIONS = aws_sns_topic.notifications.arn
     }
   }

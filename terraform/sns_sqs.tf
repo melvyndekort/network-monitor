@@ -37,14 +37,6 @@ resource "aws_sns_topic" "device_discovered" {
   }
 }
 
-resource "aws_sns_topic" "device_activity" {
-  name = "network-monitor-device-activity"
-
-  tags = {
-    Name = "network-monitor-device-activity"
-  }
-}
-
 resource "aws_sns_topic" "notifications" {
   name = "network-monitor-notifications"
 

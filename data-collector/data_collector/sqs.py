@@ -7,32 +7,22 @@ import boto3
 
 logger = logging.getLogger(__name__)
 
-MAX_BATCH_SIZE = 10
-
 
 def create_sqs_client(queue_url, region="eu-west-1"):
     """Create an SQS send function bound to a specific queue."""
     client = boto3.client("sqs", region_name=region)
 
     def send_events(events):
-        """Send events to SQS in batches of 10."""
-        for i in range(0, len(events), MAX_BATCH_SIZE):
-            batch = events[i:i + MAX_BATCH_SIZE]
-            entries = []
-            for j, event in enumerate(batch):
-                body = json.dumps(event)
-                entries.append({
-                    "Id": str(j),
-                    "MessageBody": body,
-                    "MessageGroupId": event["mac"],
-                    "MessageDeduplicationId": hashlib.md5(body.encode()).hexdigest(),
-                })
-            resp = client.send_message_batch(
-                QueueUrl=queue_url,
-                Entries=entries,
-            )
-            failed = resp.get("Failed", [])
-            if failed:
-                logger.error("Failed to send %d messages: %s", len(failed), failed)
+        """Send all events as a single batched SQS message."""
+        if not events:
+            return
+        body = json.dumps({"events": events})
+        dedup_id = hashlib.md5(body.encode()).hexdigest()
+        client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=body,
+            MessageGroupId="data-collector",
+            MessageDeduplicationId=dedup_id,
+        )
 
     return send_events
