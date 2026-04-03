@@ -1,0 +1,174 @@
+{
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "blue", "mode": "fixed" } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" [$__range])",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "DHCP Events (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "green", "mode": "fixed" } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" | message=~\"assigned.*\" | message!~\"deassigned.*\" [$__range])",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Assignments (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "orange", "mode": "fixed" } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" |= \"deassigned\" [$__range])",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Deassignments (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "purple", "mode": "fixed" } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "targets": [
+        {
+          "expr": "count(count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" | pattern `<action> <ip> for <mac>` | keep mac [$__range]) by (mac))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Unique MACs (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2, "pointSize": 5 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Assigned" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Deassigned" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "id": 5,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" | message=~\"assigned.*\" | message!~\"deassigned.*\" [$__auto]))",
+          "legendFormat": "Assigned",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" |= \"deassigned\" [$__auto]))",
+          "legendFormat": "Deassigned",
+          "refId": "B"
+        }
+      ],
+      "title": "DHCP Event Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 30, "lineWidth": 2, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 6,
+      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum by (appname) (count_over_time({job=\"vector-lmserver\"} | json | appname=~\"${pool:regex}\" [$__auto]))",
+          "legendFormat": "{{appname}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Events by DHCP Pool",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "fieldConfig": { "defaults": { "color": { "mode": "continuous-BlPu" } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 7,
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["last"] } },
+      "targets": [
+        {
+          "expr": "topk(10, count_over_time({job=\"vector-lmserver\"} | json | appname=~\"dhcp.*\" | pattern `<action> <ip> for <mac>` | keep mac [$__range]) by (mac))",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Devices by DHCP Churn",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{job=\"vector-lmserver\"} | json | appname=~\"${pool:regex}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "DHCP Event Log",
+      "type": "logs"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["network-monitor"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "loki", "uid": "grafanacloud-logs" },
+        "includeAll": true,
+        "multi": true,
+        "name": "pool",
+        "query": { "label": "appname", "stream": "{job=\"vector-lmserver\"}", "type": 1 },
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "DHCP Activity",
+  "uid": "network-monitor-dhcp"
+}

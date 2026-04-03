@@ -472,8 +472,8 @@ Stored in DynamoDB `network-monitor-device-events` table.
 
 ### Grafana Cloud
 
-- **Loki**: All RouterOS syslog via Vector
-- **Infinity plugin**: Queries REST API for device dashboards
+- **Loki**: All RouterOS syslog via Vector (labels: `job=vector-lmserver`, `source=syslog`)
+- **DHCP Activity dashboard**: Deployed, queries Loki for DHCP assign/deassign events over time
 
 ## References
 

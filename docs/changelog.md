@@ -53,7 +53,7 @@ Bootstrap 5 dark theme dashboard at `http://network-monitor-ui-844347863910.s3-w
 ### ~~Documentation~~ ✅ Done
 - `docs/api.md` — API reference with all endpoints
 - `docs/event-types.md` — Event schema, types, presence model, routing
-- `docs/grafana-setup.md` — Grafana Cloud setup with Infinity plugin
+- `docs/grafana-setup.md` — Grafana Cloud setup with Loki dashboards
 
 ### ~~Scripts~~ ✅ Done
 `scripts/deploy_ui.sh` for S3 sync. Lambda deployment handled by CI/CD.
@@ -202,7 +202,43 @@ After fixing both, re-added `trusted_key_groups` to the `/api/*` behavior for si
 
 **AP setup**: Created `netmon` rpcd user on all 4 APs with read-only ACL for `hostapd.*.get_clients`. New env vars: `AP_HOSTS`, `AP_USER`, `AP_PASSWORD`.
 
-### Grafana Dashboards`examples/grafana-dashboards/` has `network-overview.json` but deferred — Infinity plugin deemed unnecessary. Dashboard JSON kept for reference.
+### Grafana Dashboards
+
+**DHCP Activity dashboard** deployed to Grafana Cloud (2026-04-03). Loki-based, queries RouterOS syslog for DHCP assign/deassign events. Dashboard JSON in `examples/grafana-dashboards/dhcp-activity.json`.
+
+**Network Overview dashboard** (Infinity plugin) was explored but deemed unnecessary — it duplicates the web UI and the Infinity plugin has limitations in Grafana Cloud proxy mode. The old `examples/grafana-dashboards/network-overview.json` has been removed.
+
+### Device Presence Timeline via Loki
+
+**Goal**: Push device activity events to Grafana Cloud Loki so Grafana can build state timeline panels showing when each device was online/offline over time.
+
+**Architecture**:
+```
+SQS (device-events.fifo)
+  → event-router Lambda
+    → SNS device-activity → SQS push-to-loki-queue → push-to-loki Lambda → Grafana Cloud Loki
+```
+
+**New components**:
+- **Lambda: `push-to-loki`** — Receives `device_activity` events from SQS, formats as structured log entries, HTTP POSTs to Grafana Cloud Loki push API
+- **SQS queue: `push-to-loki-queue`** — Subscribed to `device-activity` SNS topic
+- **SSM parameters** — Loki push URL and API key (SecureString)
+
+**Loki labels**: `job="network-monitor"`, `event_type="device_activity"`, `mac`, `vlan`
+
+**Grafana dashboard**: Device Presence Timeline with state timeline panels showing online/offline periods per device, filterable by VLAN and device name.
+
+**Why a separate Lambda?**:
+- Single responsibility: event-router routes, push-to-loki pushes to Loki
+- Fits the existing fan-out pattern (SNS → SQS → Lambda)
+- Independent scaling and error handling
+- No changes to existing Lambdas required
+
+**Implementation**:
+1. New Lambda (`lambdas/push_to_loki/`) — handler + tests + pyproject.toml
+2. Terraform — Lambda function, SQS queue, SNS subscription, IAM role, SSM parameters for Loki credentials
+3. GitHub Actions workflow — deploy workflow for the new Lambda
+4. Grafana dashboard — Device Presence Timeline using Loki queries
 
 ### Shared Lambda Libraries
 README mentions `lambdas/shared/` with `dynamodb.py`, `sns.py`, `models.py`. Currently each Lambda has inline boto3 code. Optional refactor.
