@@ -6,6 +6,7 @@ Network Monitor observability data is available in Grafana Cloud Loki. RouterOS 
 
 - Grafana Cloud account
 - Access to the `grafanacloud-mdekort-logs` Loki datasource
+- Access to the homelab InfluxDB datasource (via Cloudflare Tunnel + service token)
 
 ## Deployed Dashboards
 
@@ -30,6 +31,31 @@ Visualizes DHCP lease activity from RouterOS syslog. All data flows through Vect
 **Template variable**: `pool` — multi-select filter by DHCP pool (`appname` label)
 
 **Dashboard JSON**: `examples/grafana-dashboards/dhcp-activity.json`
+
+### Device Presence Timeline (InfluxDB-based)
+
+**UID**: `network-monitor-presence`
+**Folder**: Network Monitor
+**Data source**: InfluxDB (`cfhzfqe4ywnb4e` — homelab InfluxDB 2.x via Cloudflare Tunnel)
+
+Visualizes device online/offline presence over time. The data-collector writes one `device_presence` point per active device every 60s to the `network-monitor` InfluxDB bucket. Absence of data points implies offline.
+
+**Panels**:
+- Online Devices — current count (stat)
+- Devices per VLAN (now) — breakdown by VLAN (piechart)
+- Total Online Devices Over Time — device count over time (timeseries)
+- Device Presence Timeline — per-device online/offline state (state-timeline)
+- Currently Online Devices — MAC, VLAN, IP, hostname, last seen (table)
+
+**Template variables**: `vlan`, `mac` — multi-select filters
+
+**Dashboard reference**: `examples/grafana-dashboards/device-presence-timeline.json`
+
+**Architecture**:
+```
+data-collector (every 60s) → InfluxDB (homelab, network-monitor bucket)
+Grafana Cloud → CF Tunnel (influxdb.mdekort.nl) → InfluxDB → Dashboard
+```
 
 ## Syslog in Loki
 

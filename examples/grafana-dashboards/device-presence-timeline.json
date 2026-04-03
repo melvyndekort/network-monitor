@@ -1,0 +1,16 @@
+{
+  "uid": "network-monitor-presence",
+  "title": "Device Presence Timeline",
+  "tags": ["network-monitor"],
+  "description": "Device presence timeline powered by InfluxDB. Data written by data-collector every 60s.",
+  "datasource": "InfluxDB (Homelab) - cfhzfqe4ywnb4e",
+  "panels": [
+    "Online Devices (stat)",
+    "Devices per VLAN (piechart)",
+    "Total Online Devices Over Time (timeseries)",
+    "Device Presence Timeline (state-timeline)",
+    "Currently Online Devices (table)"
+  ],
+  "variables": ["vlan", "mac"],
+  "note": "Full dashboard JSON managed in Grafana Cloud. This file is a reference only."
+}
