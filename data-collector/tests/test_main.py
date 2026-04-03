@@ -1,32 +1,41 @@
 """Tests for main module."""
-import pytest
+
 from unittest.mock import MagicMock
+
+import pytest
+
 from data_collector import main
 
 
 class MockMikroTik:
+    """Mock MikroTik client for testing."""
+
     def __init__(self, arp=None, dhcp=None):
         self._arp = arp or []
         self._dhcp = dhcp or []
 
     def get_arp(self):
+        """Return mock ARP entries."""
         return self._arp
 
     def get_dhcp_leases(self):
+        """Return mock DHCP leases."""
         return self._dhcp
 
 
-class MockOpenWrt:
-    def __init__(self, macs=None):
-        self._macs = macs or set()
-
-    def get_associated_macs(self):
-        return self._macs
+def _mock_openwrt(macs=None):
+    """Create a mock OpenWrt client."""
+    mock = MagicMock()
+    mock.get_associated_macs.return_value = macs or set()
+    return mock
 
 
 def test_build_enrichment_lookup():
+    """Test enrichment lookup from ARP + DHCP."""
     client = MockMikroTik(
-        arp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}],
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
         dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "host1"}],
     )
     result = main.build_enrichment_lookup(client)
@@ -35,6 +44,7 @@ def test_build_enrichment_lookup():
 
 
 def test_build_enrichment_lookup_dhcp_only():
+    """Test enrichment lookup with DHCP-only entries."""
     client = MockMikroTik(
         arp=[],
         dhcp=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "10.204.10.100", "hostname": "host1"}],
@@ -45,11 +55,16 @@ def test_build_enrichment_lookup_dhcp_only():
 
 
 def test_collect_devices_wireless_present():
+    """Test wireless device is collected."""
     mikrotik = MockMikroTik(
-        arp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}],
-        dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}],
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
+        ],
     )
-    openwrt = MockOpenWrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["hostname"] == "myhost"
@@ -58,7 +73,7 @@ def test_collect_devices_wireless_present():
 def test_collect_devices_wireless_only_no_arp():
     """Wireless device with no ARP/DHCP entry still shows up."""
     mikrotik = MockMikroTik()
-    openwrt = MockOpenWrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["ip"] is None
@@ -70,7 +85,7 @@ def test_collect_devices_wired_device_included():
         arp=[{"mac": "11:22:33:44:55:66", "ip": "10.204.10.10", "interface": "bridge"}],
         dhcp=[],
     )
-    openwrt = MockOpenWrt(macs=set())
+    openwrt = _mock_openwrt(macs=set())
     devices = main.collect_devices(mikrotik, openwrt)
     assert "11:22:33:44:55:66" in devices
 
@@ -79,19 +94,22 @@ def test_collect_devices_dhcp_only_not_included():
     """DHCP-only device (not wireless, not in ARP) is NOT included."""
     mikrotik = MockMikroTik(
         arp=[],
-        dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}],
+        dhcp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
+        ],
     )
-    openwrt = MockOpenWrt(macs=set())
+    openwrt = _mock_openwrt(macs=set())
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" not in devices
 
 
 def test_poll_sends_events():
+    """Test poll sends events to SQS."""
     mikrotik = MockMikroTik(
         arp=[{"mac": "11:22:33:44:55:66", "ip": "10.204.10.10", "interface": "bridge"}],
         dhcp=[],
     )
-    openwrt = MockOpenWrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
     sqs = MagicMock()
     sent = main.poll(mikrotik, openwrt, sqs)
     assert sent == 2
@@ -100,20 +118,57 @@ def test_poll_sends_events():
 
 
 def test_poll_empty_network():
+    """Test poll with no devices sends nothing."""
     mikrotik = MockMikroTik()
-    openwrt = MockOpenWrt()
+    openwrt = _mock_openwrt()
     sqs = MagicMock()
     sent = main.poll(mikrotik, openwrt, sqs)
     assert sent == 0
     sqs.assert_not_called()
 
 
-def test_poll_enriches_wireless_with_dhcp_hostname():
+def test_poll_writes_to_influxdb():
+    """Test poll writes presence data to InfluxDB when writer provided."""
     mikrotik = MockMikroTik(
-        arp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}],
-        dhcp=[{"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}],
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[],
     )
-    openwrt = MockOpenWrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    sqs = MagicMock()
+    influx = MagicMock()
+    main.poll(mikrotik, openwrt, sqs, write_presence=influx)
+    influx.assert_called_once()
+    devices = influx.call_args[0][0]
+    assert "AA:BB:CC:DD:EE:FF" in devices
+    assert devices["AA:BB:CC:DD:EE:FF"]["vlan"] == 10
+
+
+def test_poll_no_influxdb_write_when_none():
+    """Test poll works without InfluxDB writer."""
+    mikrotik = MockMikroTik(
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[],
+    )
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    sqs = MagicMock()
+    main.poll(mikrotik, openwrt, sqs)
+
+
+def test_poll_enriches_wireless_with_dhcp_hostname():
+    """Test poll enriches wireless devices with DHCP hostname."""
+    mikrotik = MockMikroTik(
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
+        ],
+    )
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
     sqs = MagicMock()
     main.poll(mikrotik, openwrt, sqs)
     events = sqs.call_args[0][0]
@@ -121,6 +176,7 @@ def test_poll_enriches_wireless_with_dhcp_hostname():
 
 
 def test_main_exits_without_password(monkeypatch):
+    """Test main exits when MIKROTIK_PASSWORD is missing."""
     monkeypatch.delenv("MIKROTIK_PASSWORD", raising=False)
     with pytest.raises(SystemExit) as exc_info:
         main.main()
@@ -128,6 +184,7 @@ def test_main_exits_without_password(monkeypatch):
 
 
 def test_main_exits_without_queue_url(monkeypatch):
+    """Test main exits when SQS_QUEUE_URL is missing."""
     monkeypatch.setenv("MIKROTIK_PASSWORD", "secret")
     monkeypatch.delenv("SQS_QUEUE_URL", raising=False)
     with pytest.raises(SystemExit) as exc_info:
@@ -136,6 +193,7 @@ def test_main_exits_without_queue_url(monkeypatch):
 
 
 def test_main_exits_without_ap_hosts(monkeypatch):
+    """Test main exits when AP_HOSTS is missing."""
     monkeypatch.setenv("MIKROTIK_PASSWORD", "secret")
     monkeypatch.setenv("SQS_QUEUE_URL", "https://sqs.example.com/queue")
     monkeypatch.delenv("AP_HOSTS", raising=False)
@@ -145,6 +203,7 @@ def test_main_exits_without_ap_hosts(monkeypatch):
 
 
 def test_main_exits_without_ap_password(monkeypatch):
+    """Test main exits when AP_PASSWORD is missing."""
     monkeypatch.setenv("MIKROTIK_PASSWORD", "secret")
     monkeypatch.setenv("SQS_QUEUE_URL", "https://sqs.example.com/queue")
     monkeypatch.setenv("AP_HOSTS", "10.204.50.11")

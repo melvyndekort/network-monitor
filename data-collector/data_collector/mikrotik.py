@@ -1,4 +1,5 @@
 """MikroTik RouterOS API client."""
+
 import logging
 from librouteros import connect
 from librouteros.exceptions import LibRouterosError
@@ -17,7 +18,9 @@ class MikroTikClient:
 
     def _connect(self):
         try:
-            self._api = connect(host=self.host, username=self.username, password=self.password)
+            self._api = connect(
+                host=self.host, username=self.username, password=self.password
+            )
         except LibRouterosError:
             logger.exception("Failed to connect to %s", self.host)
             self._api = None
@@ -55,11 +58,13 @@ class MikroTikClient:
                 continue
             if row.get("status") not in active_statuses:
                 continue
-            entries.append({
-                "mac": mac,
-                "ip": row.get("address"),
-                "interface": row.get("interface"),
-            })
+            entries.append(
+                {
+                    "mac": mac,
+                    "ip": row.get("address"),
+                    "interface": row.get("interface"),
+                }
+            )
         return entries
 
     def get_dhcp_leases(self):
@@ -71,9 +76,11 @@ class MikroTikClient:
             mac = row.get("mac-address")
             if not mac:
                 continue
-            entries.append({
-                "mac": mac,
-                "ip": row.get("address"),
-                "hostname": row.get("host-name"),
-            })
+            entries.append(
+                {
+                    "mac": mac,
+                    "ip": row.get("address"),
+                    "hostname": row.get("host-name"),
+                }
+            )
         return entries

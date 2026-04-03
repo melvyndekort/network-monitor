@@ -1,4 +1,5 @@
 """Event models matching the event-router Lambda schema."""
+
 from datetime import datetime, timezone
 
 VLAN_MAP = {

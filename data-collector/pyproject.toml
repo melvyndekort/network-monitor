@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "librouteros>=3.2",
     "boto3>=1.35",
+    "urllib3>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -14,6 +15,7 @@ dev = [
     "pytest>=8.4",
     "pytest-cov>=7.0",
     "pylint>=3.3",
+    "ruff>=0.11",
 ]
 
 [tool.hatch.build.targets.wheel]

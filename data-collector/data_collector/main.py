@@ -1,4 +1,5 @@
 """Data collector - polls MikroTik and OpenWrt APs, sends events to SQS."""
+
 import logging
 import os
 import sys
@@ -6,12 +7,13 @@ import time
 
 from librouteros.exceptions import LibRouterosError
 
+from data_collector.influxdb import create_influxdb_writer
 from data_collector.mikrotik import MikroTikClient
-from data_collector.models import make_event
+from data_collector.models import make_event, detect_vlan
 from data_collector.openwrt import OpenWrtClient
 from data_collector.sqs import create_sqs_client
 
-FORMAT = '%(asctime)s %(levelname)s %(name)s: %(message)s'
+FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ def build_enrichment_lookup(client):
 
 def build_enrichment_lookup_from(arp_entries, dhcp_leases):
     """Build mac -> {ip, hostname} from pre-fetched ARP + DHCP data."""
-    dhcp = {l["mac"].upper(): l for l in dhcp_leases}
+    dhcp = {lease["mac"].upper(): lease for lease in dhcp_leases}
     lookup = {}
     for entry in arp_entries:
         mac = entry["mac"].upper()
@@ -47,14 +49,20 @@ def collect_devices(mikrotik, openwrt):
     arp_entries = mikrotik.get_arp()
     arp_macs = {e["mac"].upper() for e in arp_entries}
     dhcp_leases = mikrotik.get_dhcp_leases()
-    logger.info("MikroTik: %d ARP entries, %d DHCP leases", len(arp_entries), len(dhcp_leases))
+    logger.info(
+        "MikroTik: %d ARP entries, %d DHCP leases", len(arp_entries), len(dhcp_leases)
+    )
 
     enrichment = build_enrichment_lookup_from(arp_entries, dhcp_leases)
 
     wired_only = arp_macs - wireless_macs
     active_macs = wireless_macs | arp_macs
-    logger.info("Discovered %d wireless, %d wired-only, %d total active",
-                len(wireless_macs), len(wired_only), len(active_macs))
+    logger.info(
+        "Discovered %d wireless, %d wired-only, %d total active",
+        len(wireless_macs),
+        len(wired_only),
+        len(active_macs),
+    )
 
     devices = {}
     for mac in active_macs:
@@ -63,7 +71,7 @@ def collect_devices(mikrotik, openwrt):
     return devices
 
 
-def poll(mikrotik, openwrt, send_events):
+def poll(mikrotik, openwrt, send_events, write_presence=None):
     """Poll devices and send all events to SQS."""
     devices = collect_devices(mikrotik, openwrt)
     events = [
@@ -72,6 +80,16 @@ def poll(mikrotik, openwrt, send_events):
     ]
     if events:
         send_events(events)
+    if write_presence and devices:
+        enriched = {
+            mac: {
+                "ip": d["ip"],
+                "hostname": d["hostname"],
+                "vlan": detect_vlan(d["ip"]),
+            }
+            for mac, d in devices.items()
+        }
+        write_presence(enriched, int(time.time()))
     return len(events)
 
 
@@ -100,12 +118,28 @@ def main():
 
     mikrotik = MikroTikClient(host, user, password)
     openwrt = OpenWrtClient(ap_hosts, ap_user, ap_password)
-    send_events = create_sqs_client(queue_url, region=os.environ.get("AWS_REGION", "eu-west-1"))
+    send_events = create_sqs_client(
+        queue_url, region=os.environ.get("AWS_REGION", "eu-west-1")
+    )
 
-    logger.info("Starting data collector (poll every %ds, %d APs)", POLL_INTERVAL, len(ap_hosts))
+    write_presence = None
+    influxdb_url = os.environ.get("INFLUXDB_URL")
+    influxdb_token = os.environ.get("INFLUXDB_TOKEN")
+    if influxdb_url and influxdb_token:
+        write_presence = create_influxdb_writer(
+            influxdb_url,
+            influxdb_token,
+            os.environ.get("INFLUXDB_ORG", "mdekort"),
+            os.environ.get("INFLUXDB_BUCKET", "network-monitor"),
+        )
+        logger.info("InfluxDB writer enabled: %s", influxdb_url)
+
+    logger.info(
+        "Starting data collector (poll every %ds, %d APs)", POLL_INTERVAL, len(ap_hosts)
+    )
     while True:
         try:
-            sent = poll(mikrotik, openwrt, send_events)
+            sent = poll(mikrotik, openwrt, send_events, write_presence)
             logger.info("Poll complete: %d events sent", sent)
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")

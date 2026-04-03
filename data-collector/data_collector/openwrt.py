@@ -1,4 +1,5 @@
 """OpenWrt AP client - query associated wireless clients via ubus HTTP JSON-RPC."""
+
 import json
 import logging
 import urllib.request
@@ -8,8 +9,12 @@ logger = logging.getLogger(__name__)
 
 def _rpc(host, method, params):
     """Make a ubus JSON-RPC call."""
-    data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    req = urllib.request.Request(f"http://{host}/ubus", data=data, headers={"Content-Type": "application/json"})
+    data = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    ).encode()
+    req = urllib.request.Request(
+        f"http://{host}/ubus", data=data, headers={"Content-Type": "application/json"}
+    )
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read())
 
@@ -36,10 +41,16 @@ class OpenWrtClient:
 
     def query_ap(self, host):
         """Login to a single AP and return set of associated MACs."""
-        resp = _rpc(host, "call", [
-            "00000000000000000000000000000000", "session", "login",
-            {"username": self.username, "password": self.password},
-        ])
+        resp = _rpc(
+            host,
+            "call",
+            [
+                "00000000000000000000000000000000",
+                "session",
+                "login",
+                {"username": self.username, "password": self.password},
+            ],
+        )
         session = resp["result"][1]["ubus_rpc_session"]
 
         ifaces = _rpc(host, "list", [session, "hostapd.*"])

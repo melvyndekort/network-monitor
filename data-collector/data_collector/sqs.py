@@ -1,4 +1,5 @@
 """SQS client for sending device events."""
+
 import hashlib
 import json
 import logging
