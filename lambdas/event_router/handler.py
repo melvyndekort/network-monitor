@@ -62,6 +62,8 @@ def handler(event, _context):
 def _route_event(normalized, now):
     """Route a single event to appropriate SNS topics."""
     if normalized['event_type'] in DHCP_EVENT_TYPES:
+        if normalized.get('hostname'):
+            update_device_hostname(normalized['mac'], normalized['hostname'])
         return
 
     device = get_device(normalized['mac'])
@@ -128,6 +130,15 @@ def create_device(event):
         'ttl': now + DEVICE_TTL,
         'metadata': {}
     })
+
+
+def update_device_hostname(mac, hostname):
+    """Update device hostname from DHCP event."""
+    devices_table.update_item(
+        Key={'mac': mac},
+        UpdateExpression='SET hostname = :h',
+        ExpressionAttributeValues={':h': hostname}
+    )
 
 
 def update_device_last_seen(mac, event):
