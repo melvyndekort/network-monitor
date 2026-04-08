@@ -18,6 +18,7 @@ TOPIC_NOTIFICATIONS = os.environ.get('TOPIC_NOTIFICATIONS', '')
 ONLINE_TTL = 900  # 15 minutes
 DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 OFFLINE_GRACE = 1800  # 30 minutes before online notification
+DHCP_EVENT_TYPES = {'dhcp_assigned', 'dhcp_released'}
 
 
 def handler(event, _context):
@@ -60,6 +61,9 @@ def handler(event, _context):
 
 def _route_event(normalized, now):
     """Route a single event to appropriate SNS topics."""
+    if normalized['event_type'] in DHCP_EVENT_TYPES:
+        return
+
     device = get_device(normalized['mac'])
     if device:
         was_offline = device.get('online_until', 0) < now
@@ -111,7 +115,7 @@ def create_device(event):
     now = int(time.time())
     devices_table.put_item(Item={
         'mac': event['mac'],
-        'name': event.get('hostname'),
+        'name': None,
         'manufacturer': None,
         'hostname': event.get('hostname'),
         'device_type': None,
