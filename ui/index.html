@@ -50,6 +50,7 @@
                         <th class="sortable" data-sort="last_ip">IP</th>
                         <th class="sortable" data-sort="manufacturer">Manufacturer</th>
                         <th class="sortable" data-sort="last_vlan">VLAN</th>
+                        <th class="sortable" data-sort="last_ap">AP</th>
                         <th class="sortable" data-sort="hostname">Hostname</th>
                         <th class="sortable" data-sort="last_seen">Last Seen</th>
                         <th>Monitor</th>
@@ -167,6 +168,7 @@
                     <td>${d.last_ip || '-'}</td>
                     <td class="manufacturer">${d.manufacturer || '-'}</td>
                     <td>${vlan}</td>
+                    <td>${d.last_ap || '-'}</td>
                     <td>${d.hostname || '-'}</td>
                     <td>${timeAgo(d.last_seen)}</td>
                     <td class="text-center"><input type="checkbox" class="form-check-input" ${d.notify ? 'checked' : ''} onchange="toggleNotify('${d.mac}',this.checked)"></td>

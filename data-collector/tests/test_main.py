@@ -26,7 +26,7 @@ class MockMikroTik:
 def _mock_openwrt(macs=None):
     """Create a mock OpenWrt client."""
     mock = MagicMock()
-    mock.get_associated_macs.return_value = macs or set()
+    mock.get_associated_macs.return_value = macs if macs is not None else {}
     return mock
 
 
@@ -64,19 +64,21 @@ def test_collect_devices_wireless_present():
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
         ],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["hostname"] == "myhost"
+    assert devices["AA:BB:CC:DD:EE:FF"]["ap"] == "10.0.0.1"
 
 
 def test_collect_devices_wireless_only_no_arp():
     """Wireless device with no ARP/DHCP entry still shows up."""
     mikrotik = MockMikroTik()
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["ip"] is None
+    assert devices["AA:BB:CC:DD:EE:FF"]["ap"] == "10.0.0.1"
 
 
 def test_collect_devices_wired_device_included():
@@ -85,9 +87,10 @@ def test_collect_devices_wired_device_included():
         arp=[{"mac": "11:22:33:44:55:66", "ip": "10.204.10.10", "interface": "bridge"}],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs=set())
+    openwrt = _mock_openwrt(macs={})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "11:22:33:44:55:66" in devices
+    assert devices["11:22:33:44:55:66"]["ap"] is None
 
 
 def test_collect_devices_dhcp_only_not_included():
@@ -98,7 +101,7 @@ def test_collect_devices_dhcp_only_not_included():
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
         ],
     )
-    openwrt = _mock_openwrt(macs=set())
+    openwrt = _mock_openwrt(macs={})
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" not in devices
 
@@ -109,18 +112,20 @@ def test_poll_sends_events():
         arp=[{"mac": "11:22:33:44:55:66", "ip": "10.204.10.10", "interface": "bridge"}],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     sqs = MagicMock()
     sent = main.poll(mikrotik, openwrt, sqs)
     assert sent == 2
     events = sqs.call_args[0][0]
     assert all(e["event_type"] == "device_activity" for e in events)
+    wireless_event = [e for e in events if e["mac"] == "AA:BB:CC:DD:EE:FF"][0]
+    assert wireless_event["metadata"]["ap"] == "10.0.0.1"
 
 
 def test_poll_empty_network():
     """Test poll with no devices sends nothing."""
     mikrotik = MockMikroTik()
-    openwrt = _mock_openwrt()
+    openwrt = _mock_openwrt(macs={})
     sqs = MagicMock()
     sent = main.poll(mikrotik, openwrt, sqs)
     assert sent == 0
@@ -135,7 +140,7 @@ def test_poll_writes_to_influxdb():
         ],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     sqs = MagicMock()
     influx = MagicMock()
     main.poll(mikrotik, openwrt, sqs, write_presence=influx)
@@ -153,7 +158,7 @@ def test_poll_no_influxdb_write_when_none():
         ],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     sqs = MagicMock()
     main.poll(mikrotik, openwrt, sqs)
 
@@ -168,7 +173,7 @@ def test_poll_enriches_wireless_with_dhcp_hostname():
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
         ],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF"})
+    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": "10.0.0.1"})
     sqs = MagicMock()
     main.poll(mikrotik, openwrt, sqs)
     events = sqs.call_args[0][0]

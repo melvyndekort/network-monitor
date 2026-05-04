@@ -21,7 +21,7 @@ def detect_vlan(ip):
     return None
 
 
-def make_event(event_type, mac, ip=None, hostname=None, metadata=None):
+def make_event(event_type, mac, ip=None, hostname=None, *, metadata=None):
     """Create event dict matching event-router normalize_event() schema."""
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),

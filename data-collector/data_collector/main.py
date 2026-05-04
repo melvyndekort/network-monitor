@@ -55,8 +55,8 @@ def collect_devices(mikrotik, openwrt):
 
     enrichment = build_enrichment_lookup_from(arp_entries, dhcp_leases)
 
-    wired_only = arp_macs - wireless_macs
-    active_macs = wireless_macs | arp_macs
+    wired_only = arp_macs - set(wireless_macs)
+    active_macs = set(wireless_macs) | arp_macs
     logger.info(
         "Discovered %d wireless, %d wired-only, %d total active",
         len(wireless_macs),
@@ -67,7 +67,11 @@ def collect_devices(mikrotik, openwrt):
     devices = {}
     for mac in active_macs:
         info = enrichment.get(mac, {})
-        devices[mac] = {"ip": info.get("ip"), "hostname": info.get("hostname")}
+        devices[mac] = {
+            "ip": info.get("ip"),
+            "hostname": info.get("hostname"),
+            "ap": wireless_macs.get(mac),
+        }
     return devices
 
 
@@ -75,7 +79,13 @@ def poll(mikrotik, openwrt, send_events, write_presence=None):
     """Poll devices and send all events to SQS."""
     devices = collect_devices(mikrotik, openwrt)
     events = [
-        make_event("device_activity", mac, d["ip"], d["hostname"])
+        make_event(
+            "device_activity",
+            mac,
+            d["ip"],
+            d["hostname"],
+            metadata={"ap": d["ap"]} if d.get("ap") else None,
+        )
         for mac, d in devices.items()
     ]
     if events:

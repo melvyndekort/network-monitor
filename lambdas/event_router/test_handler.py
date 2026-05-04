@@ -131,7 +131,7 @@ def test_handler_new_device(dynamodb):
 
 
 def test_handler_existing_device_updates_fields(dynamodb):
-    """Test handler updates last_ip and online_until for existing device."""
+    """Test handler updates last_ip, online_until, and last_ap for existing device."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
     devices_table.put_item(Item={
@@ -143,11 +143,14 @@ def test_handler_existing_device_updates_fields(dynamodb):
         'online_until': now + ONLINE_TTL,
     })
 
-    result = handler(_make_sqs_event(_make_raw_event(ip='10.204.10.101')), None)
+    event = _make_raw_event(ip='10.204.10.101')
+    event['metadata'] = {'ap': '10.204.50.13'}
+    result = handler(_make_sqs_event(event), None)
     assert result['statusCode'] == 200
 
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert response['Item']['last_ip'] == '10.204.10.101'
+    assert response['Item']['last_ap'] == '10.204.50.13'
 
 
 def test_no_notification_when_device_still_online(dynamodb):

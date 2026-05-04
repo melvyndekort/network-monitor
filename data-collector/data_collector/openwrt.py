@@ -28,13 +28,14 @@ class OpenWrtClient:
         self.password = password
 
     def get_associated_macs(self):
-        """Return set of MAC addresses associated across all APs."""
-        macs = set()
+        """Return dict of {MAC: ap_host} for all associated clients."""
+        macs = {}
         for host in self.hosts:
             try:
                 ap_macs = self.query_ap(host)
                 logger.info("AP %s: %d clients", host, len(ap_macs))
-                macs.update(ap_macs)
+                for mac in ap_macs:
+                    macs[mac] = host
             except (OSError, ValueError, KeyError):
                 logger.exception("Failed to query AP %s", host)
         return macs
