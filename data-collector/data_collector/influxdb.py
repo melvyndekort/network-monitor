@@ -2,7 +2,7 @@
 
 import logging
 
-from influxdb_client import InfluxDBClient, Point
+from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb_client.rest import ApiException
 
@@ -25,7 +25,7 @@ def create_influxdb_writer(url, token, org, bucket):
                 Point("device_presence")
                 .tag("mac", mac)
                 .field("online", 1)
-                .time(timestamp)
+                .time(timestamp, WritePrecision.S)
             )
             if info.get("vlan"):
                 point = point.tag("vlan", str(info["vlan"]))
