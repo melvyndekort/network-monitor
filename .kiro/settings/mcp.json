@@ -6,6 +6,13 @@
         "-c",
         "GRAFANA_URL=https://mdekort.grafana.net GRAFANA_SERVICE_ACCOUNT_TOKEN=$(pass grafana/mcp-token) exec uvx mcp-grafana --disable-oncall --disable-incident --disable-sift --disable-asserts --disable-pyroscope --disable-admin"
       ]
+    },
+    "portainer": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec /home/melvyn/.local/bin/portainer-mcp -server portainer.mdekort.nl -token $(pass portainer/api-token) -disable-version-check -tools /tmp/portainer-tools.yaml"
+      ]
     }
   }
 }

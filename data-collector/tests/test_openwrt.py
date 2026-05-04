@@ -28,7 +28,7 @@ def test_get_associated_macs(mock_urlopen):
     mock_urlopen.side_effect = _mock_urlopen(
         [
             {"jsonrpc": "2.0", "id": 1, "result": [0, {"ubus_rpc_session": "abc123"}]},
-            {"jsonrpc": "2.0", "id": 1, "result": {"hostapd.wl0": {"get_clients": {}}}},
+            {"jsonrpc": "2.0", "id": 1, "result": {"hostapd.phy0-ap0": {"get_clients": {}}}},
             {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -38,7 +38,6 @@ def test_get_associated_macs(mock_urlopen):
                         "clients": {
                             "aa:bb:cc:dd:ee:ff": {
                                 "signal": -55,
-                                "connected_time": 120,
                             }
                         }
                     },
@@ -53,7 +52,6 @@ def test_get_associated_macs(mock_urlopen):
     assert macs["AA:BB:CC:DD:EE:FF"]["ap"] == "10.0.0.1"
     assert macs["AA:BB:CC:DD:EE:FF"]["band"] == "2.4GHz"
     assert macs["AA:BB:CC:DD:EE:FF"]["signal"] == -55
-    assert macs["AA:BB:CC:DD:EE:FF"]["connected_time"] == 120
 
 
 @patch("data_collector.openwrt.urllib.request.urlopen")
@@ -65,7 +63,7 @@ def test_get_associated_macs_multiple_interfaces(mock_urlopen):
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": {"hostapd.wl0": {}, "hostapd.wl1": {}},
+                "result": {"hostapd.phy0-ap0": {}, "hostapd.phy1-ap0": {}},
             },
             {
                 "jsonrpc": "2.0",

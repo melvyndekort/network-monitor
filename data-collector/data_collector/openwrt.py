@@ -65,15 +65,14 @@ class OpenWrtClient:
                     "ap": host,
                     "band": band,
                     "signal": info.get("signal"),
-                    "connected_time": info.get("connected_time"),
                 }
         return clients
 
 
 def _detect_band(iface):
-    """Detect WiFi band from interface name (wl0=2.4GHz, wl1=5GHz)."""
-    if "wl1" in iface:
+    """Detect WiFi band from interface name (phy0=2.4GHz, phy1=5GHz)."""
+    if "phy1" in iface or "wl1" in iface:
         return "5GHz"
-    if "wl0" in iface:
+    if "phy0" in iface or "wl0" in iface:
         return "2.4GHz"
     return None
