@@ -67,10 +67,11 @@ def collect_devices(mikrotik, openwrt):
     devices = {}
     for mac in active_macs:
         info = enrichment.get(mac, {})
+        wifi = wireless_macs.get(mac)
         devices[mac] = {
             "ip": info.get("ip"),
             "hostname": info.get("hostname"),
-            "ap": wireless_macs.get(mac),
+            "wifi": wifi,
         }
     return devices
 
@@ -84,7 +85,7 @@ def poll(mikrotik, openwrt, send_events, write_presence=None):
             mac,
             d["ip"],
             d["hostname"],
-            metadata={"ap": d["ap"]} if d.get("ap") else None,
+            metadata=d.get("wifi") if d.get("wifi") else None,
         )
         for mac, d in devices.items()
     ]

@@ -32,14 +32,28 @@ def test_get_associated_macs(mock_urlopen):
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": [0, {"clients": {"aa:bb:cc:dd:ee:ff": {}}}],
+                "result": [
+                    0,
+                    {
+                        "clients": {
+                            "aa:bb:cc:dd:ee:ff": {
+                                "signal": -55,
+                                "connected_time": 120,
+                            }
+                        }
+                    },
+                ],
             },
         ]
     )
 
     client = OpenWrtClient(["10.0.0.1"], "user", "pass")
     macs = client.get_associated_macs()
-    assert macs == {"AA:BB:CC:DD:EE:FF": "10.0.0.1"}
+    assert "AA:BB:CC:DD:EE:FF" in macs
+    assert macs["AA:BB:CC:DD:EE:FF"]["ap"] == "10.0.0.1"
+    assert macs["AA:BB:CC:DD:EE:FF"]["band"] == "2.4GHz"
+    assert macs["AA:BB:CC:DD:EE:FF"]["signal"] == -55
+    assert macs["AA:BB:CC:DD:EE:FF"]["connected_time"] == 120
 
 
 @patch("data_collector.openwrt.urllib.request.urlopen")
@@ -56,19 +70,20 @@ def test_get_associated_macs_multiple_interfaces(mock_urlopen):
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": [0, {"clients": {"aa:bb:cc:dd:ee:ff": {}}}],
+                "result": [0, {"clients": {"aa:bb:cc:dd:ee:ff": {"signal": -60}}}],
             },
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": [0, {"clients": {"11:22:33:44:55:66": {}}}],
+                "result": [0, {"clients": {"11:22:33:44:55:66": {"signal": -45}}}],
             },
         ]
     )
 
     client = OpenWrtClient(["10.0.0.1"], "user", "pass")
     macs = client.get_associated_macs()
-    assert macs == {"AA:BB:CC:DD:EE:FF": "10.0.0.1", "11:22:33:44:55:66": "10.0.0.1"}
+    assert macs["AA:BB:CC:DD:EE:FF"]["band"] == "2.4GHz"
+    assert macs["11:22:33:44:55:66"]["band"] == "5GHz"
 
 
 @patch("data_collector.openwrt.urllib.request.urlopen")
@@ -103,7 +118,8 @@ def test_failed_ap_does_not_break_others(mock_urlopen):
 
     client = OpenWrtClient(["10.0.0.1", "10.0.0.2"], "user", "pass")
     macs = client.get_associated_macs()
-    assert macs == {"AA:BB:CC:DD:EE:FF": "10.0.0.2"}
+    assert "AA:BB:CC:DD:EE:FF" in macs
+    assert macs["AA:BB:CC:DD:EE:FF"]["ap"] == "10.0.0.2"
 
 
 @patch("data_collector.openwrt.urllib.request.urlopen")
