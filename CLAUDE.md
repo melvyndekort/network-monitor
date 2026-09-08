@@ -1,6 +1,6 @@
 # network-monitor
 
-> For global standards, way-of-workings, and pre-commit checklist, see `~/.kiro/steering/behavior.md`
+> For global standards, way-of-workings, and pre-commit checklist, see `~/.claude/CLAUDE.md`
 
 ## Role
 
@@ -37,6 +37,10 @@ Terraform creates Lambdas with dummy code and `ignore_changes` on `source_code_h
 - Backend: S3 key `network-monitor.tfstate` in `mdekort-tfstate-844347863910`
 - Providers: AWS `~> 5.0`, Cloudflare `~> 5.0`
 - Uses `default_tags` on the AWS provider
+
+## MCP servers
+
+This repo has project-scoped `grafana` and `portainer` MCP servers (`.mcp.json`) — see `~/.claude/references/mcp-catalog.md`.
 
 ## Related Repositories
 
