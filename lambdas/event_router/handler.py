@@ -91,7 +91,7 @@ def _route_event(normalized, now):
     if device:
         was_offline = device.get("online_until", 0) < now
         offline_long_enough = device.get("online_until", 0) < now - OFFLINE_GRACE
-        update_device_last_seen(normalized["mac"], normalized)
+        update_device_last_seen(normalized["mac"], normalized, device)
         if was_offline and offline_long_enough:
             normalized["new_state"] = "online"
             sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
@@ -213,10 +213,11 @@ def update_device_hostname(mac, hostname):
     )
 
 
-def update_device_last_seen(mac, event):
+def update_device_last_seen(mac, event, device):
     """Update device last_seen and online_until."""
     now = int(time.time())
     update_expr = "SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou"
+    remove_expr = ""
     attr_values = {
         ":ls": now,
         ":ip": event.get("ip"),
@@ -229,13 +230,20 @@ def update_device_last_seen(mac, event):
     if event.get("hostname"):
         update_expr += ", hostname = :hn"
         attr_values[":hn"] = event["hostname"]
+    elif not device.get("hostname"):
+        # Clean up a legacy explicit-NULL hostname (written by the old
+        # create_device, before the hostname-index GSI existed). DynamoDB
+        # rejects ANY write to an item whose GSI key attribute is present
+        # with the wrong type, even one that doesn't touch that attribute.
+        # REMOVE is a no-op if the attribute is already absent.
+        remove_expr = " REMOVE hostname"
     ap = event.get("metadata", {}).get("ap")
     if ap:
         update_expr += ", last_ap = :ap"
         attr_values[":ap"] = ap
     devices_table.update_item(
         Key={"mac": mac},
-        UpdateExpression=update_expr,
+        UpdateExpression=update_expr + remove_expr,
         ExpressionAttributeValues=attr_values,
     )
 

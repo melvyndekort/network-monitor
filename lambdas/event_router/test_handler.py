@@ -3,6 +3,7 @@ import json
 import os
 import time
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -202,7 +203,8 @@ def test_handler_existing_device_updates_fields(dynamodb):
 
 
 def test_existing_device_activity_without_hostname_does_not_clear_it(dynamodb):
-    """A ping with no hostname (e.g. WiFi-only, no ARP/DHCP match) must not blank a known hostname."""
+    """A ping with no hostname (e.g. WiFi-only, no ARP/DHCP match) must not
+    blank out a device's already-known hostname."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
     devices_table.put_item(Item={
@@ -255,6 +257,43 @@ def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb):
     message = json.loads(json.loads(messages[0]['Body'])['Message'])
     assert message['new_state'] == 'rotated'
     assert message['previous_mac'] == old_mac
+
+
+def test_update_last_seen_removes_hostname_when_neither_side_has_one(monkeypatch):
+    """A device with no known hostname, pinged by an event with no hostname,
+    must issue a REMOVE for hostname. Real-world reason: a device written by
+    the old create_device (pre-dating the hostname-index GSI) can have an
+    explicit NULL-type hostname attribute, and DynamoDB rejects ANY write to
+    such an item - not just ones touching hostname - once a GSI exists on
+    that attribute. REMOVE is a no-op when the attribute was already absent,
+    so this is always safe, not just for the legacy-data case."""
+    import handler as handler_module  # pylint: disable=import-outside-toplevel
+
+    mock_table = MagicMock()
+    monkeypatch.setattr(handler_module, 'devices_table', mock_table)
+
+    handler_module.update_device_last_seen(
+        'AA:BB:CC:DD:EE:FF', _make_raw_event(hostname=None), {'hostname': None}
+    )
+
+    call_kwargs = mock_table.update_item.call_args.kwargs
+    assert 'REMOVE hostname' in call_kwargs['UpdateExpression']
+
+
+def test_update_last_seen_keeps_existing_hostname_untouched(monkeypatch):
+    """A device with an already-known real hostname, pinged by an event with
+    no hostname, must neither SET nor REMOVE hostname."""
+    import handler as handler_module  # pylint: disable=import-outside-toplevel
+
+    mock_table = MagicMock()
+    monkeypatch.setattr(handler_module, 'devices_table', mock_table)
+
+    handler_module.update_device_last_seen(
+        'AA:BB:CC:DD:EE:FF', _make_raw_event(hostname=None), {'hostname': 'known-host'}
+    )
+
+    call_kwargs = mock_table.update_item.call_args.kwargs
+    assert 'hostname' not in call_kwargs['UpdateExpression']
 
 
 def test_no_notification_when_device_still_online(dynamodb):
@@ -310,7 +349,8 @@ def test_notification_sent_after_offline_grace(dynamodb):
     assert message['new_state'] == 'online'
 
 
-def test_new_device_discovery_sets_new_state(dynamodb):
+@pytest.mark.usefixtures('dynamodb')
+def test_new_device_discovery_sets_new_state():
     """New-device discovery messages carry new_state=discovered (previously unset)."""
     queue_url = _subscribe_notifications_queue()
     handler(_make_sqs_event(_make_raw_event()), None)
