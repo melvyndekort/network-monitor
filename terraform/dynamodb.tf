@@ -12,27 +12,24 @@ resource "aws_dynamodb_table" "devices" {
   }
 
   attribute {
-    name = "last_seen"
-    type = "N"
+    name = "hostname"
+    type = "S"
   }
 
-  attribute {
-    name = "last_vlan"
-    type = "N"
-  }
-
-  # GSI for querying by VLAN
+  # GSI for MAC-rotation identity continuity: given a hostname on a newly
+  # seen MAC, look up whether a device with the same hostname already
+  # exists under a different (previously assigned, now-rotated) MAC.
+  # Sparse by nature - only devices with a hostname attribute are indexed.
   global_secondary_index {
-    name            = "vlan-index"
-    hash_key        = "last_vlan"
-    range_key       = "last_seen"
+    name            = "hostname-index"
+    hash_key        = "hostname"
     projection_type = "ALL"
   }
 
-  ttl {
-    enabled        = true
-    attribute_name = "ttl"
-  }
+  # No TTL: device identity persists once discovered. Table is tiny
+  # (dozens of items) so storage cost is immaterial - the alternative
+  # (auto-expiring and re-alerting a returning device as "unrecognized")
+  # is a confirmed false-positive source.
 
   point_in_time_recovery {
     enabled = true

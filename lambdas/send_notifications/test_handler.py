@@ -53,7 +53,7 @@ def aws_setup():
 
 
 def test_format_notification_new_device():
-    """Test notification formatting for new device."""
+    """Test notification formatting for a new vendor-MAC device."""
     device = {
         'mac': 'AA:BB:CC:DD:EE:FF',
         'name': 'Test Device',
@@ -61,13 +61,38 @@ def test_format_notification_new_device():
         'last_vlan': 10,
         'manufacturer': 'Apple'
     }
-    message = {'event_type': 'device_discovered'}
-    
+    message = {'event_type': 'device_activity', 'new_state': 'discovered', 'mac_type': 'vendor'}
+
     title, body = format_notification(device, message)
-    
+
     assert '🆕' in title
     assert 'AA:BB:CC:DD:EE:FF' in body
     assert '10.204.10.100' in body
+
+
+def test_format_notification_new_device_randomized_mac_is_high_priority():
+    """A new device with a locally-administered MAC gets a distinct, urgent title."""
+    device = {'mac': 'AA:BB:CC:DD:EE:FF', 'manufacturer': 'Unknown'}
+    message = {
+        'event_type': 'device_activity',
+        'new_state': 'discovered',
+        'mac_type': 'locally_administered',
+    }
+
+    title, _ = format_notification(device, message)
+
+    assert '🚨' in title
+
+
+def test_format_notification_rotated_device():
+    """Test notification formatting for a MAC-rotation identity link."""
+    device = {'mac': 'NEW:MA:C0:00:00:02', 'name': 'Daan phone'}
+    message = {'new_state': 'rotated', 'previous_mac': 'OLD:MA:C0:00:00:01'}
+
+    title, body = format_notification(device, message)
+
+    assert 'Re-identified' in title
+    assert 'OLD:MA:C0:00:00:01' in body
 
 
 def test_format_notification_offline():
@@ -137,6 +162,79 @@ def test_handler_respects_throttle(mock_http, aws_setup):
     }
     
     result = handler(event, None)
-    
+
     assert result['statusCode'] == 200
     assert not mock_http.request.called  # Should not send
+
+
+def _make_event(mac, new_state, mac_type=None, previous_mac=None):
+    """Build an SNS-wrapped SQS event for the handler."""
+    message = {'mac': mac, 'new_state': new_state}
+    if mac_type:
+        message['mac_type'] = mac_type
+    if previous_mac:
+        message['previous_mac'] = previous_mac
+    return {
+        'Records': [{
+            'body': json.dumps({'Message': json.dumps(message)})
+        }]
+    }
+
+
+@patch('handler.http')
+def test_discovery_notification_bypasses_notify_flag(mock_http, aws_setup):
+    """A newly-discovered device (notify defaults to False) must still alert."""
+    devices_table = aws_setup.Table('test-devices')
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'notify': False,
+    })
+
+    handler(_make_event('AA:BB:CC:DD:EE:FF', 'discovered', mac_type='vendor'), None)
+
+    assert mock_http.request.called
+
+
+@patch('handler.http')
+def test_back_online_notification_respects_notify_flag(mock_http, aws_setup):
+    """A known device with notify=False must not alert on back-online."""
+    devices_table = aws_setup.Table('test-devices')
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'notify': False,
+    })
+
+    handler(_make_event('AA:BB:CC:DD:EE:FF', 'online'), None)
+
+    assert not mock_http.request.called
+
+
+@patch('handler.http')
+def test_discovery_and_online_throttle_keys_do_not_collide(mock_http, aws_setup):
+    """Discovery and a later back-online alert for the same MAC must not share
+    a throttle bucket (previously both mapped to the same event_type key)."""
+    devices_table = aws_setup.Table('test-devices')
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'notify': True,
+    })
+
+    handler(_make_event('AA:BB:CC:DD:EE:FF', 'discovered', mac_type='vendor'), None)
+    handler(_make_event('AA:BB:CC:DD:EE:FF', 'online'), None)
+
+    assert mock_http.request.call_count == 2
+
+
+@patch('handler.http')
+def test_throttle_not_set_when_delivery_fails(mock_http, aws_setup):
+    """A failed Apprise delivery must not mark the alert as throttled -
+    otherwise a transient failure silently suppresses the real alert."""
+    devices_table = aws_setup.Table('test-devices')
+    throttle_table = aws_setup.Table('test-throttle')
+    devices_table.put_item(Item={'mac': 'AA:BB:CC:DD:EE:FF', 'notify': True})
+    mock_http.request.side_effect = OSError('connection refused')
+
+    handler(_make_event('AA:BB:CC:DD:EE:FF', 'online'), None)
+
+    response = throttle_table.get_item(Key={'throttle_key': 'AA:BB:CC:DD:EE:FF#online'})
+    assert 'Item' not in response

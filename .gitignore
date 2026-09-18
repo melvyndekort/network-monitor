@@ -14,7 +14,8 @@ env/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
-terraform.tfvars
+# terraform.tfvars is intentionally tracked in this repo (contents are
+# non-sensitive: region, account_id, apprise_url, mikrotik_host)
 
 # IDE
 .vscode/

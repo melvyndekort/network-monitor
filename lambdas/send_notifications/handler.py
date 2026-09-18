@@ -41,19 +41,22 @@ def handler(event, _context):
         if not device:
             continue
 
-        is_new_device = 'new_state' not in message
-        if not is_new_device and not device.get('notify'):
+        # Discovery alerts bypass the per-device notify flag - a device that
+        # was never seen before can't have opted in yet. Every other
+        # transition (back-online, MAC-rotation) respects it.
+        is_discovery = message.get('new_state') == 'discovered'
+        if not is_discovery and not device.get('notify'):
             continue
 
-        event_type = message.get('event_type') or message.get('new_state')
-        throttle_key = f"{mac}#{event_type}"
+        reason = message.get('new_state', message.get('event_type'))
+        throttle_key = f"{mac}#{reason}"
 
         if check_throttle(throttle_key):
             continue
 
         title, body_text = format_notification(device, message)
-        send_apprise(title, body_text)
-        set_throttle(throttle_key, 3600)
+        if send_apprise(title, body_text):
+            set_throttle(throttle_key, 3600)
 
     return {'statusCode': 200}
 
@@ -83,23 +86,39 @@ def set_throttle(key, duration):
 def format_notification(device, message):
     """Format notification title and body."""
     name = device.get('name') or device['mac']
+    new_state = message.get('new_state')
 
-    if 'new_state' in message:
-        if message['new_state'] == 'offline':
-            return ('📴 Device Offline', f"{name} went offline")
+    if new_state == 'online':
         return ('✅ Device Online', f"{name} is back online")
 
-    return (
-        '🆕 New Device Detected',
-        f"MAC: {device['mac']}\n"
-        f"IP: {device.get('last_ip', 'Unknown')}\n"
-        f"VLAN: {device.get('last_vlan', 'Unknown')}\n"
-        f"Manufacturer: {device.get('manufacturer', 'Unknown')}"
-    )
+    if new_state == 'rotated':
+        previous_mac = message.get('previous_mac', 'unknown')
+        return (
+            'ℹ️ Device Re-identified',
+            f"{name} reconnected with a new MAC ({device['mac']}, was {previous_mac})"
+        )
+
+    if new_state == 'discovered':
+        # A locally-administered (randomized) MAC with no matching known
+        # hostname is the actual evasion pattern this system exists to
+        # catch - flag it distinctly from an ordinary new vendor-MAC device.
+        if message.get('mac_type') == 'locally_administered':
+            title = '🚨 Unrecognized Device (Randomized MAC)'
+        else:
+            title = '🆕 New Device Detected'
+        return (
+            title,
+            f"MAC: {device['mac']}\n"
+            f"IP: {device.get('last_ip', 'Unknown')}\n"
+            f"VLAN: {device.get('last_vlan', 'Unknown')}\n"
+            f"Manufacturer: {device.get('manufacturer', 'Unknown')}"
+        )
+
+    return ('📴 Device Offline', f"{name} went offline")
 
 
 def send_apprise(title, body):
-    """Send notification via Apprise."""
+    """Send notification via Apprise. Returns True on a successful request."""
     try:
         http.request(
             'POST',
@@ -113,5 +132,7 @@ def send_apprise(title, body):
                 'CF-Access-Client-Secret': CF_ACCESS_CLIENT_SECRET,
             }
         )
-    except urllib3.exceptions.HTTPError:
+        return True
+    except (urllib3.exceptions.HTTPError, OSError):
         logger.exception("Failed to send notification")
+        return False

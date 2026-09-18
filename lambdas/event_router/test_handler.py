@@ -2,6 +2,7 @@
 import json
 import os
 import time
+import uuid
 
 import pytest
 
@@ -20,7 +21,7 @@ os.environ['TOPIC_NOTIFICATIONS'] = 'arn:aws:sns:eu-west-1:123456789012:notifica
 from moto import mock_aws  # pylint: disable=wrong-import-position
 import boto3  # pylint: disable=wrong-import-position
 from handler import (  # pylint: disable=wrong-import-position
-    handler, normalize_event, OFFLINE_GRACE, ONLINE_TTL,
+    handler, normalize_event, compute_mac_type, OFFLINE_GRACE, ONLINE_TTL,
 )
 
 
@@ -33,7 +34,15 @@ def fixture_dynamodb():
         ddb.create_table(
             TableName='test-devices',
             KeySchema=[{'AttributeName': 'mac', 'KeyType': 'HASH'}],
-            AttributeDefinitions=[{'AttributeName': 'mac', 'AttributeType': 'S'}],
+            AttributeDefinitions=[
+                {'AttributeName': 'mac', 'AttributeType': 'S'},
+                {'AttributeName': 'hostname', 'AttributeType': 'S'},
+            ],
+            GlobalSecondaryIndexes=[{
+                'IndexName': 'hostname-index',
+                'KeySchema': [{'AttributeName': 'hostname', 'KeyType': 'HASH'}],
+                'Projection': {'ProjectionType': 'ALL'},
+            }],
             BillingMode='PAY_PER_REQUEST'
         )
 
@@ -65,13 +74,25 @@ def fixture_dynamodb():
 
 
 def _make_sqs_event(*events):
-    """Build SQS event with one or more raw events."""
-    if len(events) == 1:
-        return {'Records': [{'body': json.dumps(events[0])}]}
-    return {'Records': [{'body': json.dumps({'events': list(events)})}]}
+    """Build SQS event with one or more raw events, each in its own record."""
+    return {
+        'Records': [
+            {'messageId': str(uuid.uuid4()), 'body': json.dumps(evt)}
+            for evt in events
+        ]
+    }
 
 
-def _make_raw_event(mac='aa:bb:cc:dd:ee:ff', ip='10.204.10.100'):
+def _make_batched_sqs_event(*events):
+    """Build a single SQS record carrying multiple bundled events."""
+    return {
+        'Records': [
+            {'messageId': str(uuid.uuid4()), 'body': json.dumps({'events': list(events)})}
+        ]
+    }
+
+
+def _make_raw_event(mac='aa:bb:cc:dd:ee:ff', ip='10.204.10.100', hostname=None):
     """Build a raw device event."""
     return {
         'timestamp': '2026-03-11T12:00:00Z',
@@ -79,6 +100,7 @@ def _make_raw_event(mac='aa:bb:cc:dd:ee:ff', ip='10.204.10.100'):
         'event_type': 'device_activity',
         'mac': mac,
         'ip': ip,
+        'hostname': hostname,
         'vlan': 10,
         'metadata': {}
     }
@@ -102,7 +124,7 @@ def _subscribe_notifications_queue():
 def _get_notification_messages(queue_url):
     """Read messages from the notifications SQS queue."""
     sqs = boto3.client('sqs', region_name='eu-west-1')
-    return sqs.receive_message(QueueUrl=queue_url).get('Messages', [])
+    return sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get('Messages', [])
 
 
 def test_normalize_event():
@@ -112,6 +134,8 @@ def test_normalize_event():
     assert result['mac'] == 'AA:BB:CC:DD:EE:FF'
     assert result['event_type'] == 'device_activity'
     assert result['ip'] == '10.204.10.100'
+    # 0xAA = 0b10101010 - the U/L bit (0x02) is set on this conventional test MAC
+    assert result['mac_type'] == 'locally_administered'
 
 
 def test_normalize_event_invalid():
@@ -119,15 +143,39 @@ def test_normalize_event_invalid():
     assert normalize_event({'invalid': 'data'}) is None
 
 
+@pytest.mark.parametrize('mac,expected', [
+    ('00:11:22:33:44:55', 'vendor'),        # 0x00 = 00000000, bit 0x02 unset
+    ('02:00:00:00:00:01', 'locally_administered'),
+    ('2A:FB:8C:D1:4B:A0', 'locally_administered'),  # real randomized MAC seen in prod
+    ('98:5F:41:66:CB:4B', 'vendor'),  # real vendor (Intel) MAC seen in prod
+])
+def test_compute_mac_type(mac, expected):
+    """Test U/L-bit classification against known real-world MAC examples."""
+    assert compute_mac_type(mac) == expected
+
+
 def test_handler_new_device(dynamodb):
     """Test handler creates device and publishes to TOPIC_DISCOVERED."""
     result = handler(_make_sqs_event(_make_raw_event()), None)
     assert result['statusCode'] == 200
+    assert result['batchItemFailures'] == []
 
     devices_table = dynamodb.Table('test-devices')
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert 'Item' in response
     assert response['Item']['notify'] is False
+    assert response['Item']['mac_type'] == 'locally_administered'
+    assert 'ttl' not in response['Item']
+    assert 'hostname' not in response['Item']
+
+
+def test_handler_new_device_with_hostname_sets_gsi_key(dynamodb):
+    """Test a new device with a hostname is written with the hostname attribute set."""
+    handler(_make_sqs_event(_make_raw_event(hostname='some-device')), None)
+
+    devices_table = dynamodb.Table('test-devices')
+    response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
+    assert response['Item']['hostname'] == 'some-device'
 
 
 def test_handler_existing_device_updates_fields(dynamodb):
@@ -151,6 +199,62 @@ def test_handler_existing_device_updates_fields(dynamodb):
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert response['Item']['last_ip'] == '10.204.10.101'
     assert response['Item']['last_ap'] == '10.204.50.13'
+
+
+def test_existing_device_activity_without_hostname_does_not_clear_it(dynamodb):
+    """A ping with no hostname (e.g. WiFi-only, no ARP/DHCP match) must not blank a known hostname."""
+    devices_table = dynamodb.Table('test-devices')
+    now = int(time.time())
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'hostname': 'known-hostname',
+        'notify': True,
+        'online_until': now + ONLINE_TTL,
+    })
+
+    handler(_make_sqs_event(_make_raw_event(hostname=None)), None)
+
+    response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
+    assert response['Item']['hostname'] == 'known-hostname'
+
+
+def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb):
+    """A new MAC with a hostname matching an existing device is a rotation, not a new discovery."""
+    old_mac = '11:22:33:00:00:01'
+    new_mac = '11:22:33:00:00:02'
+    devices_table = dynamodb.Table('test-devices')
+    now = int(time.time())
+    devices_table.put_item(Item={
+        'mac': old_mac,
+        'hostname': 'Galaxy-A17-5G',
+        'name': 'Daan phone',
+        'notify': True,
+        'first_seen': now - 1000,
+        'last_seen': now - 1000,
+        'online_until': now - OFFLINE_GRACE - 60,
+    })
+
+    queue_url = _subscribe_notifications_queue()
+    result = handler(
+        _make_sqs_event(_make_raw_event(mac=new_mac, hostname='Galaxy-A17-5G')),
+        None,
+    )
+    assert result['statusCode'] == 200
+
+    # Old identity migrated to the new MAC, old MAC item removed.
+    old_response = devices_table.get_item(Key={'mac': old_mac})
+    assert 'Item' not in old_response
+
+    new_response = devices_table.get_item(Key={'mac': new_mac})
+    assert new_response['Item']['name'] == 'Daan phone'
+    assert new_response['Item']['notify'] is True
+
+    # Notification fires (as a rotation notice), but never on TOPIC_DISCOVERED.
+    messages = _get_notification_messages(queue_url)
+    assert len(messages) == 1
+    message = json.loads(json.loads(messages[0]['Body'])['Message'])
+    assert message['new_state'] == 'rotated'
+    assert message['previous_mac'] == old_mac
 
 
 def test_no_notification_when_device_still_online(dynamodb):
@@ -206,12 +310,23 @@ def test_notification_sent_after_offline_grace(dynamodb):
     assert message['new_state'] == 'online'
 
 
+def test_new_device_discovery_sets_new_state(dynamodb):
+    """New-device discovery messages carry new_state=discovered (previously unset)."""
+    queue_url = _subscribe_notifications_queue()
+    handler(_make_sqs_event(_make_raw_event()), None)
+
+    messages = _get_notification_messages(queue_url)
+    assert len(messages) == 1
+    message = json.loads(json.loads(messages[0]['Body'])['Message'])
+    assert message['new_state'] == 'discovered'
+
+
 def test_batched_events_format(dynamodb):
     """Test handler processes {"events": [...]} batch format."""
     event1 = _make_raw_event(mac='aa:bb:cc:00:00:01', ip='10.204.10.1')
     event2 = _make_raw_event(mac='aa:bb:cc:00:00:02', ip='10.204.10.2')
 
-    result = handler(_make_sqs_event(event1, event2), None)
+    result = handler(_make_batched_sqs_event(event1, event2), None)
     assert result['statusCode'] == 200
 
     devices_table = dynamodb.Table('test-devices')
@@ -223,12 +338,7 @@ def test_dedup_skips_duplicate_in_same_batch(dynamodb):
     """Test that duplicate events in same batch are deduplicated."""
     event = _make_raw_event()
 
-    result = handler({
-        'Records': [
-            {'body': json.dumps(event)},
-            {'body': json.dumps(event)},
-        ]
-    }, None)
+    result = handler(_make_batched_sqs_event(event, event), None)
     assert result['statusCode'] == 200
 
     events_table = dynamodb.Table('test-events')
@@ -242,6 +352,37 @@ def test_dedup_skips_duplicate_in_same_batch(dynamodb):
 def test_handler_empty_events():
     """Test handler with no valid events returns early."""
     result = handler({
-        'Records': [{'body': json.dumps({'invalid': 'data'})}]
+        'Records': [{'messageId': str(uuid.uuid4()), 'body': json.dumps({'invalid': 'data'})}]
     }, None)
     assert result['statusCode'] == 200
+
+
+def test_one_bad_record_does_not_fail_other_records_in_batch(dynamodb, monkeypatch):
+    """A failure routing one record's event must not affect other records' processing,
+    and the failing record's messageId is reported for partial-batch retry."""
+    import handler as handler_module  # pylint: disable=import-outside-toplevel
+
+    original_route = handler_module._route_event  # pylint: disable=protected-access
+
+    def flaky_route(normalized, now):
+        if normalized['mac'] == 'BA:D0:00:00:00:01':
+            raise handler_module.ClientError(
+                {'Error': {'Code': 'ValidationException', 'Message': 'boom'}},
+                'PutItem',
+            )
+        return original_route(normalized, now)
+
+    monkeypatch.setattr(handler_module, '_route_event', flaky_route)
+
+    good_event = _make_raw_event(mac='aa:bb:cc:00:00:03')
+    bad_event = _make_raw_event(mac='ba:d0:00:00:00:01')
+    sqs_event = _make_sqs_event(good_event, bad_event)
+    bad_message_id = sqs_event['Records'][1]['messageId']
+
+    result = handler_module.handler(sqs_event, None)
+
+    assert result['batchItemFailures'] == [{'itemIdentifier': bad_message_id}]
+
+    devices_table = dynamodb.Table('test-devices')
+    assert 'Item' in devices_table.get_item(Key={'mac': 'AA:BB:CC:00:00:03'})
+    assert 'Item' not in devices_table.get_item(Key={'mac': 'BA:D0:00:00:00:01'})

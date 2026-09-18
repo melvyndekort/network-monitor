@@ -18,7 +18,14 @@ def create_sqs_client(queue_url, region="eu-west-1"):
         if not events:
             return
         body = json.dumps({"events": events})
-        dedup_id = hashlib.md5(body.encode()).hexdigest()
+        # Dedup ID excludes `timestamp` so FIFO content-based dedup is a real
+        # safety net against redelivering the same event set (e.g. a retry),
+        # rather than being defeated by a fresh timestamp on every event.
+        stable = json.dumps(
+            [{k: v for k, v in e.items() if k != "timestamp"} for e in events],
+            sort_keys=True,
+        )
+        dedup_id = hashlib.md5(stable.encode()).hexdigest()
         client.send_message(
             QueueUrl=queue_url,
             MessageBody=body,

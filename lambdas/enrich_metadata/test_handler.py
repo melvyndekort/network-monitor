@@ -12,7 +12,7 @@ os.environ['DEVICES_TABLE'] = 'test-devices'
 
 from moto import mock_aws
 import boto3
-from handler import handler, lookup_manufacturer
+from handler import handler, lookup_manufacturer, RANDOMIZED_MAC_MANUFACTURER
 
 
 @pytest.fixture
@@ -109,6 +109,58 @@ def test_handler_skips_existing_manufacturer(mock_sleep, mock_http, aws_setup):
     }
     
     result = handler(event, None)
-    
+
     assert result['statusCode'] == 200
     assert not mock_http.request.called  # Should not lookup
+
+
+@patch('handler.http')
+@patch('handler.time.sleep')
+def test_handler_skips_lookup_for_locally_administered_mac(mock_sleep, mock_http, aws_setup):
+    """A randomized MAC can never resolve to a vendor - skip the lookup chain
+    entirely (previously: retried forever, daily, with 3 external calls)."""
+    devices_table = aws_setup.Table('test-devices')
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'mac_type': 'locally_administered',
+    })
+
+    event = {
+        'Records': [{
+            'body': json.dumps({
+                'Message': json.dumps({'mac': 'AA:BB:CC:DD:EE:FF'})
+            })
+        }]
+    }
+
+    result = handler(event, None)
+
+    assert result['statusCode'] == 200
+    assert not mock_http.request.called
+    assert not mock_sleep.called
+
+    response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
+    assert response['Item']['manufacturer'] == RANDOMIZED_MAC_MANUFACTURER
+
+
+@patch('handler.http')
+@patch('handler.time.sleep')
+def test_scheduled_scan_self_heals_previously_unknown_randomized_devices(
+    mock_sleep, mock_http, aws_setup
+):
+    """A device already marked 'Unknown' from before this fix existed must
+    stop being retried forever once the daily scan sees it's a randomized MAC."""
+    devices_table = aws_setup.Table('test-devices')
+    devices_table.put_item(Item={
+        'mac': 'AA:BB:CC:DD:EE:FF',
+        'mac_type': 'locally_administered',
+        'manufacturer': 'Unknown',
+    })
+
+    result = handler({}, None)
+
+    assert result['statusCode'] == 200
+    assert not mock_http.request.called
+
+    response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
+    assert response['Item']['manufacturer'] == RANDOMIZED_MAC_MANUFACTURER

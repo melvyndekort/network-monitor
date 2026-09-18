@@ -15,6 +15,11 @@ devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 # HTTP client
 http = urllib3.PoolManager()
 
+# Vendor lookup can never succeed for a randomized MAC - skip it entirely
+# rather than retrying forever (previously: 3 chained external HTTP calls,
+# every single day, indefinitely, for every locally-administered MAC).
+RANDOMIZED_MAC_MANUFACTURER = 'Randomized MAC (no vendor)'
+
 
 def handler(event, _context):
     """Enrich device metadata via SQS or scheduled retry."""
@@ -37,9 +42,7 @@ def handle_sqs(event):
         if not device or device.get('manufacturer'):
             continue
 
-        time.sleep(1)  # Rate limit
-
-        manufacturer = lookup_manufacturer(mac)
+        manufacturer = _resolve_manufacturer(mac, device.get('mac_type'))
         if manufacturer:
             update_manufacturer(mac, manufacturer)
 
@@ -54,10 +57,18 @@ def handle_scheduled():
         ExpressionAttributeValues={':unk': 'Unknown', ':none': None}
     )
     for device in response.get('Items', []):
-        time.sleep(1)  # Rate limit
-        manufacturer = lookup_manufacturer(device['mac'])
+        manufacturer = _resolve_manufacturer(device['mac'], device.get('mac_type'))
         if manufacturer and manufacturer != 'Unknown':
             update_manufacturer(device['mac'], manufacturer)
+
+
+def _resolve_manufacturer(mac, mac_type):
+    """Resolve manufacturer, skipping the external lookup chain entirely
+    for locally-administered (randomized) MACs - it can never succeed."""
+    if mac_type == 'locally_administered':
+        return RANDOMIZED_MAC_MANUFACTURER
+    time.sleep(1)  # Rate limit
+    return lookup_manufacturer(mac)
 
 
 def get_device(mac):

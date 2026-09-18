@@ -19,11 +19,11 @@ devices_table = dynamodb.Table(os.environ.get('DEVICES_TABLE', ''))
 
 
 def handler(event, _context):
-    """Handle API Gateway requests."""
+    """Handle requests from the Lambda Function URL (behind CloudFront OAC)."""
     method = event['requestContext']['http']['method']
     path = event['requestContext']['http']['path']
 
-    # Strip /api prefix (CloudFront proxies /api/* to API Gateway)
+    # Strip /api prefix (CloudFront routes /api/* to this Function URL)
     if path.startswith('/api'):
         path = path[4:] or '/'
 

@@ -12,7 +12,11 @@ def test_get_associated_macs(mock_urlopen):
     mock_urlopen.side_effect = _mock_urlopen(
         [
             {"jsonrpc": "2.0", "id": 1, "result": [0, {"ubus_rpc_session": "abc123"}]},
-            {"jsonrpc": "2.0", "id": 1, "result": {"hostapd.phy0-ap0": {"get_clients": {}}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"hostapd.phy0-ap0": {"get_clients": {}}},
+            },
             {
                 "jsonrpc": "2.0",
                 "id": 1,

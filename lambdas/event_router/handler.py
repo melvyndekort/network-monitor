@@ -1,10 +1,17 @@
 """Event router Lambda - Normalize and route events."""
 
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
+
 import boto3
+from boto3.dynamodb.conditions import Key
+from botocore.exceptions import BotoCoreError, ClientError
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # DynamoDB setup (initialized once per container)
 dynamodb = boto3.resource("dynamodb")
@@ -17,31 +24,35 @@ sns = boto3.client("sns")
 TOPIC_DISCOVERED = os.environ.get("TOPIC_DISCOVERED", "")
 TOPIC_NOTIFICATIONS = os.environ.get("TOPIC_NOTIFICATIONS", "")
 ONLINE_TTL = 900  # 15 minutes
-DEVICE_TTL = 14 * 24 * 60 * 60  # 14 days
 OFFLINE_GRACE = 1800  # 30 minutes before online notification
 DHCP_EVENT_TYPES = {"dhcp_assigned", "dhcp_released"}
+HOSTNAME_INDEX = "hostname-index"
 
 
 def handler(event, _context):
-    """Process events from SQS and route to appropriate SNS topics."""
-    all_events = []
+    """Process events from SQS and route to appropriate SNS topics.
+
+    Returns per-record batch item failures so a single bad event doesn't
+    force SQS to redeliver the whole batch of already-processed records.
+    """
+    record_events = []
     for record in event["Records"]:
         body = json.loads(record["body"])
         raw_events = body.get("events", [body])
         for raw in raw_events:
             normalized = normalize_event(raw)
             if normalized:
-                all_events.append(normalized)
+                record_events.append((record["messageId"], normalized))
 
     # Deduplicate
     now_window = int(time.time() // 30)
     dedup_keys = {}
     unique_events = []
-    for evt in all_events:
+    for message_id, evt in record_events:
         key = f"{evt['mac']}#{evt['event_type']}#{now_window}"
         if key not in dedup_keys and not check_dedup(key):
             dedup_keys[key] = True
-            unique_events.append(evt)
+            unique_events.append((message_id, evt))
 
     if not unique_events:
         return {"statusCode": 200}
@@ -50,14 +61,23 @@ def handler(event, _context):
     batch_write_dedup(list(dedup_keys.keys()))
 
     # Batch write events
-    batch_write_events(unique_events)
+    batch_write_events([evt for _, evt in unique_events])
 
-    # Route each event (device lookups + SNS publishes)
+    # Route each event (device lookups + SNS publishes), isolating failures
+    # per originating SQS record so one bad event doesn't redeliver the rest.
     now = int(time.time())
-    for normalized in unique_events:
-        _route_event(normalized, now)
+    failed_message_ids = set()
+    for message_id, normalized in unique_events:
+        try:
+            _route_event(normalized, now)
+        except (ClientError, BotoCoreError):
+            logger.exception("Failed to route event for mac=%s", normalized.get("mac"))
+            failed_message_ids.add(message_id)
 
-    return {"statusCode": 200}
+    return {
+        "statusCode": 200,
+        "batchItemFailures": [{"itemIdentifier": mid} for mid in failed_message_ids],
+    }
 
 
 def _route_event(normalized, now):
@@ -75,20 +95,36 @@ def _route_event(normalized, now):
         if was_offline and offline_long_enough:
             normalized["new_state"] = "online"
             sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
-    else:
-        create_device(normalized)
-        sns.publish(TopicArn=TOPIC_DISCOVERED, Message=json.dumps(normalized))
+        return
+
+    rotated_from = (
+        find_device_by_hostname(normalized["hostname"])
+        if normalized.get("hostname")
+        else None
+    )
+    if rotated_from:
+        migrate_device(rotated_from, normalized, now)
+        normalized["new_state"] = "rotated"
+        normalized["previous_mac"] = rotated_from["mac"]
         sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
+        return
+
+    create_device(normalized)
+    normalized["new_state"] = "discovered"
+    sns.publish(TopicArn=TOPIC_DISCOVERED, Message=json.dumps(normalized))
+    sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
 
 
 def normalize_event(body):
     """Normalize event from Vector."""
     try:
+        mac = body["mac"].upper()
         return {
             "timestamp": body["timestamp"],
             "source": body["source"],
             "event_type": body["event_type"],
-            "mac": body["mac"].upper(),
+            "mac": mac,
+            "mac_type": compute_mac_type(mac),
             "ip": body.get("ip"),
             "hostname": body.get("hostname"),
             "vlan": body.get("vlan"),
@@ -98,32 +134,74 @@ def normalize_event(body):
         return None
 
 
+def compute_mac_type(mac):
+    """Classify a MAC as vendor-assigned or locally-administered (randomized).
+
+    Uses the U/L bit (bit 1 of the first octet). Locally-administered MACs
+    are common on legitimate, already-known devices too (Android/iOS/ChromeOS
+    privacy MAC features rotate per network) - this is a secondary priority
+    signal, not a standalone "new = suspicious" decision.
+    """
+    first_octet = int(mac.split(":")[0], 16)
+    return "locally_administered" if first_octet & 0x02 else "vendor"
+
+
 def get_device(mac):
     """Get device from DynamoDB."""
     response = devices_table.get_item(Key={"mac": mac})
     return response.get("Item")
 
 
+def find_device_by_hostname(hostname):
+    """Look up an existing device by hostname, for MAC-rotation identity continuity."""
+    response = devices_table.query(
+        IndexName=HOSTNAME_INDEX,
+        KeyConditionExpression=Key("hostname").eq(hostname),
+        Limit=1,
+    )
+    items = response.get("Items", [])
+    return items[0] if items else None
+
+
+def _device_item(mac, event, now, existing=None):
+    """Build a devices-table item.
+
+    `hostname` is a GSI key attribute (hostname-index) - it is only included
+    when a value is available, since DynamoDB rejects writing NULL to a
+    String-typed GSI key (the same class of bug that used to break
+    `last_vlan` on the now-removed vlan-index).
+    """
+    existing = existing or {}
+    item = {
+        "mac": mac,
+        "name": existing.get("name"),
+        "manufacturer": existing.get("manufacturer"),
+        "device_type": existing.get("device_type"),
+        "mac_type": event.get("mac_type"),
+        "last_ip": event.get("ip"),
+        "last_vlan": event.get("vlan"),
+        "notify": existing.get("notify", False),
+        "first_seen": existing.get("first_seen", now),
+        "last_seen": now,
+        "online_until": now + ONLINE_TTL,
+        "metadata": {},
+    }
+    hostname = event.get("hostname") or existing.get("hostname")
+    if hostname:
+        item["hostname"] = hostname
+    return item
+
+
 def create_device(event):
     """Create new device."""
     now = int(time.time())
-    devices_table.put_item(
-        Item={
-            "mac": event["mac"],
-            "name": None,
-            "manufacturer": None,
-            "hostname": event.get("hostname"),
-            "device_type": None,
-            "last_ip": event.get("ip"),
-            "last_vlan": event.get("vlan"),
-            "notify": False,
-            "first_seen": now,
-            "last_seen": now,
-            "online_until": now + ONLINE_TTL,
-            "ttl": now + DEVICE_TTL,
-            "metadata": {},
-        }
-    )
+    devices_table.put_item(Item=_device_item(event["mac"], event, now))
+
+
+def migrate_device(old_device, event, now):
+    """Migrate an existing device's identity onto a new (rotated) MAC."""
+    devices_table.put_item(Item=_device_item(event["mac"], event, now, existing=old_device))
+    devices_table.delete_item(Key={"mac": old_device["mac"]})
 
 
 def update_device_hostname(mac, hostname):
@@ -138,17 +216,19 @@ def update_device_hostname(mac, hostname):
 def update_device_last_seen(mac, event):
     """Update device last_seen and online_until."""
     now = int(time.time())
-    update_expr = (
-        "SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan,"
-        " online_until = :ou, #t = :ttl"
-    )
+    update_expr = "SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou"
     attr_values = {
         ":ls": now,
         ":ip": event.get("ip"),
         ":vlan": event.get("vlan"),
         ":ou": now + ONLINE_TTL,
-        ":ttl": now + DEVICE_TTL,
     }
+    # hostname is a GSI key attribute - only set it when present, and never
+    # blank out a previously-known hostname just because this particular
+    # ping (e.g. a WiFi-only event with no ARP/DHCP match yet) lacks one.
+    if event.get("hostname"):
+        update_expr += ", hostname = :hn"
+        attr_values[":hn"] = event["hostname"]
     ap = event.get("metadata", {}).get("ap")
     if ap:
         update_expr += ", last_ap = :ap"
@@ -156,7 +236,6 @@ def update_device_last_seen(mac, event):
     devices_table.update_item(
         Key={"mac": mac},
         UpdateExpression=update_expr,
-        ExpressionAttributeNames={"#t": "ttl"},
         ExpressionAttributeValues=attr_values,
     )
 

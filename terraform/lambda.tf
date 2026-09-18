@@ -26,9 +26,15 @@ resource "aws_lambda_function" "event_router" {
 }
 
 resource "aws_lambda_event_source_mapping" "event_router" {
-  event_source_arn = aws_sqs_queue.device_events.arn
-  function_name    = aws_lambda_function.event_router.arn
-  batch_size       = 10
+  event_source_arn        = aws_sqs_queue.device_events.arn
+  function_name           = aws_lambda_function.event_router.arn
+  batch_size              = 10
+  function_response_types = ["ReportBatchItemFailures"]
+}
+
+resource "aws_cloudwatch_log_group" "event_router" {
+  name              = "/aws/lambda/${aws_lambda_function.event_router.function_name}"
+  retention_in_days = 30
 }
 
 # Send Notifications Lambda
@@ -58,6 +64,11 @@ resource "aws_lambda_event_source_mapping" "send_notifications" {
   event_source_arn = aws_sqs_queue.notifier.arn
   function_name    = aws_lambda_function.send_notifications.arn
   batch_size       = 5
+}
+
+resource "aws_cloudwatch_log_group" "send_notifications" {
+  name              = "/aws/lambda/${aws_lambda_function.send_notifications.function_name}"
+  retention_in_days = 30
 }
 
 # Enrich Metadata Lambda
@@ -109,6 +120,11 @@ resource "aws_lambda_permission" "enrich_retry" {
   source_arn    = aws_cloudwatch_event_rule.enrich_retry.arn
 }
 
+resource "aws_cloudwatch_log_group" "enrich_metadata" {
+  name              = "/aws/lambda/${aws_lambda_function.enrich_metadata.function_name}"
+  retention_in_days = 30
+}
+
 # API Handler Lambda
 resource "aws_lambda_function" "api_handler" {
   filename      = "api_handler.zip"
@@ -146,4 +162,9 @@ resource "aws_lambda_permission" "cloudfront_oac_invoke" {
   function_name = aws_lambda_function.api_handler.function_name
   principal     = "cloudfront.amazonaws.com"
   source_arn    = aws_cloudfront_distribution.ui.arn
+}
+
+resource "aws_cloudwatch_log_group" "api_handler" {
+  name              = "/aws/lambda/${aws_lambda_function.api_handler.function_name}"
+  retention_in_days = 30
 }

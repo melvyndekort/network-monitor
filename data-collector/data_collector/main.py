@@ -21,6 +21,10 @@ logging.basicConfig(level=logging.INFO, format=FORMAT, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "60"))
+# Devices with no change since their last sent event still get an event at
+# this cadence, purely to refresh `online_until` downstream. Everything else
+# is only sent on an actual change - see poll()/_device_signature().
+HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", str(15 * 60)))
 
 
 def build_enrichment_lookup(client):
@@ -79,9 +83,44 @@ def collect_devices(mikrotik, openwrt):
     return devices
 
 
-def poll(mikrotik, openwrt, send_events, write_presence=None):
-    """Poll devices and send all events to SQS."""
+def _device_signature(info):
+    """Fields that count as a real change for a device between polls."""
+    wifi = info.get("wifi") or {}
+    return (info.get("ip"), info.get("hostname"), wifi.get("ap"))
+
+
+def _changed_devices(devices, state, now):
+    """Return the subset of `devices` that are new, changed, or due for a
+    heartbeat since the last sent event, updating `state` in place.
+
+    `state` is a mac -> (signature, last_sent_at) dict the caller keeps
+    across polls. Devices no longer active are dropped from `state` so a
+    future reappearance is treated as fresh rather than "unchanged".
+    """
+    changed = {}
+    for mac, info in devices.items():
+        signature = _device_signature(info)
+        last = state.get(mac)
+        if last is None or last[0] != signature or now - last[1] >= HEARTBEAT_INTERVAL:
+            changed[mac] = info
+            state[mac] = (signature, now)
+
+    for mac in list(state):
+        if mac not in devices:
+            del state[mac]
+
+    return changed
+
+
+def poll(mikrotik, openwrt, send_events, state=None, write_presence=None):
+    """Poll devices and send events to SQS only for new/changed devices
+    (plus a periodic heartbeat), instead of an event per device every poll.
+    """
+    if state is None:
+        state = {}
     devices = collect_devices(mikrotik, openwrt)
+    changed = _changed_devices(devices, state, time.time())
+
     events = [
         make_event(
             "device_activity",
@@ -90,7 +129,7 @@ def poll(mikrotik, openwrt, send_events, write_presence=None):
             d["hostname"],
             metadata=d.get("wifi") if d.get("wifi") else None,
         )
-        for mac, d in devices.items()
+        for mac, d in changed.items()
     ]
     if events:
         send_events(events)
@@ -164,44 +203,54 @@ def build_pihole_client():
     return pihole_client, write_pihole
 
 
-def main():
-    """Main entry point."""
-    host = os.environ.get("MIKROTIK_HOST", "10.204.50.1")
-    user = os.environ.get("MIKROTIK_USER", "api-user")
-    password = os.environ.get("MIKROTIK_PASSWORD", "")
-    queue_url = os.environ.get("SQS_QUEUE_URL", "")
-    ap_hosts = os.environ.get("AP_HOSTS", "").split(",")
-    ap_user = os.environ.get("AP_USER", "netmon")
-    ap_password = os.environ.get("AP_PASSWORD", "")
-
-    if not password:
-        logger.error("MIKROTIK_PASSWORD is required")
-        sys.exit(1)
-    if not queue_url:
-        logger.error("SQS_QUEUE_URL is required")
-        sys.exit(1)
-    if not ap_hosts or not ap_hosts[0]:
+def _load_config():
+    """Read and validate required environment configuration, exiting on any gap."""
+    config = {
+        "host": os.environ.get("MIKROTIK_HOST", "10.204.50.1"),
+        "user": os.environ.get("MIKROTIK_USER", "api-user"),
+        "password": os.environ.get("MIKROTIK_PASSWORD", ""),
+        "queue_url": os.environ.get("SQS_QUEUE_URL", ""),
+        "ap_hosts": os.environ.get("AP_HOSTS", "").split(","),
+        "ap_user": os.environ.get("AP_USER", "netmon"),
+        "ap_password": os.environ.get("AP_PASSWORD", ""),
+    }
+    required_env_names = {
+        "password": "MIKROTIK_PASSWORD",
+        "queue_url": "SQS_QUEUE_URL",
+        "ap_password": "AP_PASSWORD",
+    }
+    for key, env_name in required_env_names.items():
+        if not config[key]:
+            logger.error("%s is required", env_name)
+            sys.exit(1)
+    if not config["ap_hosts"] or not config["ap_hosts"][0]:
         logger.error("AP_HOSTS is required")
         sys.exit(1)
-    if not ap_password:
-        logger.error("AP_PASSWORD is required")
-        sys.exit(1)
+    return config
 
-    mikrotik = MikroTikClient(host, user, password)
-    openwrt = OpenWrtClient(ap_hosts, ap_user, ap_password)
+
+def main():
+    """Main entry point."""
+    config = _load_config()
+
+    mikrotik = MikroTikClient(config["host"], config["user"], config["password"])
+    openwrt = OpenWrtClient(config["ap_hosts"], config["ap_user"], config["ap_password"])
     send_events = create_sqs_client(
-        queue_url, region=os.environ.get("AWS_REGION", "eu-west-1")
+        config["queue_url"], region=os.environ.get("AWS_REGION", "eu-west-1")
     )
 
     write_presence = build_influxdb_writer()
     pihole_client, write_pihole = build_pihole_client()
+    state = {}
 
     logger.info(
-        "Starting data collector (poll every %ds, %d APs)", POLL_INTERVAL, len(ap_hosts)
+        "Starting data collector (poll every %ds, %d APs)",
+        POLL_INTERVAL,
+        len(config["ap_hosts"]),
     )
     while True:
         try:
-            sent = poll(mikrotik, openwrt, send_events, write_presence)
+            sent = poll(mikrotik, openwrt, send_events, state, write_presence)
             logger.info("Poll complete: %d events sent", sent)
         except (LibRouterosError, ConnectionError, OSError):
             logger.exception("Poll failed")

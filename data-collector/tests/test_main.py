@@ -195,6 +195,94 @@ def test_poll_enriches_wireless_with_dhcp_hostname():
     assert events[0]["hostname"] == "myhost"
 
 
+def test_poll_second_call_same_state_sends_nothing_when_unchanged():
+    """Test cross-poll dedup: an unchanged device isn't resent on the next poll."""
+    mikrotik = MockMikroTik(
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[],
+    )
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
+    sqs = MagicMock()
+    state = {}
+
+    first = main.poll(mikrotik, openwrt, sqs, state)
+    second = main.poll(mikrotik, openwrt, sqs, state)
+
+    assert first == 1
+    assert second == 0
+    sqs.assert_called_once()
+
+
+def test_poll_resends_when_ap_changes():
+    """Test a device roaming to a different AP is resent even before the heartbeat."""
+    mikrotik = MockMikroTik()
+    sqs = MagicMock()
+    state = {}
+
+    openwrt_ap1 = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
+    main.poll(mikrotik, openwrt_ap1, sqs, state)
+
+    openwrt_ap2 = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.2", "band": "5GHz", "signal": -40}}
+    )
+    sent = main.poll(mikrotik, openwrt_ap2, sqs, state)
+
+    assert sent == 1
+    assert sqs.call_count == 2
+
+
+def test_poll_resends_after_heartbeat_interval(monkeypatch):
+    """Test an unchanged device is still resent once HEARTBEAT_INTERVAL elapses,
+    so online_until keeps getting refreshed downstream even with no real change."""
+    mikrotik = MockMikroTik(
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[],
+    )
+    openwrt = _mock_openwrt(macs={})
+    sqs = MagicMock()
+    state = {}
+
+    times = iter([1000.0, 1000.0 + main.HEARTBEAT_INTERVAL + 1])
+    monkeypatch.setattr(main.time, "time", lambda: next(times))
+
+    first = main.poll(mikrotik, openwrt, sqs, state)
+    second = main.poll(mikrotik, openwrt, sqs, state)
+
+    assert first == 1
+    assert second == 1
+
+
+def test_poll_disappeared_device_is_resent_as_new_on_return():
+    """Test a device that drops out and reappears is treated as a fresh signal,
+    not silently deduped against its old (now-stale) signature."""
+    mikrotik = MockMikroTik(
+        arp=[
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
+        ],
+        dhcp=[],
+    )
+    sqs = MagicMock()
+    state = {}
+
+    main.poll(mikrotik, _mock_openwrt(macs={}), sqs, state)
+    assert "AA:BB:CC:DD:EE:FF" in state
+
+    gone_mikrotik = MockMikroTik(arp=[], dhcp=[])
+    main.poll(gone_mikrotik, _mock_openwrt(macs={}), sqs, state)
+    assert "AA:BB:CC:DD:EE:FF" not in state
+
+    sent = main.poll(mikrotik, _mock_openwrt(macs={}), sqs, state)
+    assert sent == 1
+
+
 def test_poll_pihole_sends_events():
     """Test poll_pihole writes classified events to Loki when present."""
     pihole = MagicMock()
