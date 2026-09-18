@@ -141,13 +141,16 @@ def build_pihole_client():
 
     try:
         tracked_devices = json.loads(os.environ.get("PIHOLE_TRACKED_DEVICES", "{}"))
+        pihole_passwords = json.loads(os.environ.get("PIHOLE_API_PASSWORDS", "{}"))
     except ValueError:
-        logger.exception("Invalid PIHOLE_TRACKED_DEVICES, disabling Pi-hole polling")
+        logger.exception(
+            "Invalid PIHOLE_TRACKED_DEVICES/PIHOLE_API_PASSWORDS, disabling Pi-hole polling"
+        )
         return None, None
-    if not tracked_devices:
+    if not tracked_devices or not pihole_passwords:
         return None, None
 
-    pihole_client = PiholeClient(pihole_hosts, tracked_devices)
+    pihole_client = PiholeClient(pihole_hosts, tracked_devices, pihole_passwords)
     write_pihole = create_loki_writer(
         os.environ.get("LOKI_URL", "https://logs-prod-eu-west-0.grafana.net"),
         os.environ.get("LOKI_USER", "876553"),

@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 from data_collector.pihole import PiholeClient, classify
 from tests.helpers import mock_urlopen as build_responses
 
+LOGIN_OK = {"session": {"valid": True, "sid": "test-sid"}}
+
 
 def test_classify_blocked():
     """Blocked statuses classify as 'blocked'."""
@@ -28,9 +30,10 @@ def test_classify_unknown_skipped():
 
 @patch("data_collector.pihole.urllib.request.urlopen")
 def test_poll_host_classifies_and_filters(mock_urlopen):
-    """poll_host returns only events for tracked devices, correctly classified."""
+    """poll_host logs in, then returns only events for tracked devices, correctly classified."""
     mock_urlopen.side_effect = build_responses(
         [
+            LOGIN_OK,
             {
                 "devices": [
                     {
@@ -65,7 +68,9 @@ def test_poll_host_classifies_and_filters(mock_urlopen):
         ]
     )
 
-    client = PiholeClient(["pihole-1"], {"74:4C:A1:55:F9:55": "chromebook"})
+    client = PiholeClient(
+        ["pihole-1"], {"74:4C:A1:55:F9:55": "chromebook"}, {"pihole-1": "pw"}
+    )
     events = client.poll_host("pihole-1")
 
     assert len(events) == 2
@@ -80,9 +85,11 @@ def test_poll_host_classifies_and_filters(mock_urlopen):
 @patch("data_collector.pihole.urllib.request.urlopen")
 def test_poll_host_no_tracked_devices_returns_empty(mock_urlopen):
     """poll_host returns nothing when no tracked device IPs are known."""
-    mock_urlopen.side_effect = build_responses([{"devices": []}])
+    mock_urlopen.side_effect = build_responses([LOGIN_OK, {"devices": []}])
 
-    client = PiholeClient(["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"})
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "pw"}
+    )
     events = client.poll_host("pihole-1")
 
     assert not events
@@ -90,9 +97,10 @@ def test_poll_host_no_tracked_devices_returns_empty(mock_urlopen):
 
 @patch("data_collector.pihole.urllib.request.urlopen")
 def test_poll_combines_multiple_hosts(mock_urlopen):
-    """poll() combines events across all configured Pi-hole hosts."""
+    """poll() logs into and combines events across all configured Pi-hole hosts."""
     mock_urlopen.side_effect = build_responses(
         [
+            LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
                 "cursor": 1,
@@ -105,6 +113,7 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
                     }
                 ],
             },
+            LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
                 "cursor": 2,
@@ -120,7 +129,11 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
         ]
     )
 
-    client = PiholeClient(["pihole-1", "pihole-2"], {"AA:BB:CC:DD:EE:FF": "chromebook"})
+    client = PiholeClient(
+        ["pihole-1", "pihole-2"],
+        {"AA:BB:CC:DD:EE:FF": "chromebook"},
+        {"pihole-1": "pw1", "pihole-2": "pw2"},
+    )
     events = client.poll()
 
     assert len(events) == 2
@@ -129,10 +142,12 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
 
 @patch("data_collector.pihole.urllib.request.urlopen")
 def test_poll_host_unreachable_does_not_raise(mock_urlopen):
-    """A failed Pi-hole request returns an empty list rather than raising."""
+    """A failed Pi-hole login returns an empty list rather than raising."""
     mock_urlopen.side_effect = OSError("unreachable")
 
-    client = PiholeClient(["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"})
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "pw"}
+    )
     events = client.poll_host("pihole-1")
 
     assert not events
@@ -140,16 +155,17 @@ def test_poll_host_unreachable_does_not_raise(mock_urlopen):
 
 @patch("data_collector.pihole.urllib.request.urlopen")
 def test_poll_one_host_failing_does_not_break_others(mock_urlopen):
-    """poll() continues to the next host if one fails."""
+    """poll() continues to the next host if one fails to log in."""
     call_count = 0
 
     def side_effect(*args, **kwargs):
         del args, kwargs
         nonlocal call_count
         call_count += 1
-        if call_count <= 1:
+        if call_count == 1:
             raise OSError("pihole-1 unreachable")
         responses = [
+            LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
                 "cursor": 1,
@@ -171,8 +187,71 @@ def test_poll_one_host_failing_does_not_break_others(mock_urlopen):
 
     mock_urlopen.side_effect = side_effect
 
-    client = PiholeClient(["pihole-1", "pihole-2"], {"AA:BB:CC:DD:EE:FF": "chromebook"})
+    client = PiholeClient(
+        ["pihole-1", "pihole-2"],
+        {"AA:BB:CC:DD:EE:FF": "chromebook"},
+        {"pihole-1": "pw1", "pihole-2": "pw2"},
+    )
     events = client.poll()
 
     assert len(events) == 1
     assert events[0]["domain"] == "a.com"
+
+
+@patch("data_collector.pihole.urllib.request.urlopen")
+def test_poll_host_login_rejected_returns_empty(mock_urlopen):
+    """A login response with no sid (bad password) results in no events, no crash."""
+    mock_urlopen.side_effect = build_responses([{"session": {"valid": False}}])
+
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "wrong"}
+    )
+    events = client.poll_host("pihole-1")
+
+    assert not events
+
+
+@patch("data_collector.pihole.urllib.request.urlopen")
+def test_poll_host_reauths_on_expired_session(mock_urlopen):
+    """A 401 on an authenticated request triggers a fresh login and retry."""
+    call_count = 0
+
+    def side_effect(req, **kwargs):
+        del kwargs
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # initial login
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(LOGIN_OK).encode()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
+            return resp
+        if call_count == 2:
+            # first devices call: session expired
+            import urllib.error  # pylint: disable=import-outside-toplevel
+
+            raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+        if call_count == 3:
+            # re-login
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(LOGIN_OK).encode()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
+            return resp
+        # retried devices call succeeds
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({"devices": []}).encode()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    mock_urlopen.side_effect = side_effect
+
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "pw"}
+    )
+    ip_map = client._device_ips("pihole-1")  # pylint: disable=protected-access
+
+    assert not ip_map
+    assert call_count == 4

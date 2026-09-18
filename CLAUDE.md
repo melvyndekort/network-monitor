@@ -22,7 +22,7 @@ This is the first repo using a dedicated AWS subaccount (`844347863910`). State 
   - `enrich_metadata/` — Manufacturer lookup for MAC addresses
   - `send_notifications/` — Sends ntfy notifications
   - `track_presence/` — Tracks device online/offline state
-- `data-collector/` — Python container (separate pyproject.toml, Dockerfile, Makefile) that collects data from router-events and pushes to SQS. Also polls Pi-hole (`pihole.py`) for tracked devices' DNS query activity and pushes classified allowed/blocked events straight to Grafana Cloud Loki (`loki.py`) as a side-channel — bypasses SQS/DynamoDB entirely, since that schema is device-presence-shaped, not per-query-DNS-event-shaped. Optional, like the InfluxDB writer: enabled only when `PIHOLE_HOSTS` + `LOKI_PASSWORD` are set.
+- `data-collector/` — Python container (separate pyproject.toml, Dockerfile, Makefile) that collects data from router-events and pushes to SQS. Also polls Pi-hole (`pihole.py`) for tracked devices' DNS query activity and pushes classified allowed/blocked events straight to Grafana Cloud Loki (`loki.py`) as a side-channel — bypasses SQS/DynamoDB entirely, since that schema is device-presence-shaped, not per-query-DNS-event-shaped. Authenticates per-instance via Pi-hole's `/api/auth` (session-based, re-logs in on an expired/401 session). Optional, like the InfluxDB writer: enabled only when `PIHOLE_HOSTS`, `PIHOLE_TRACKED_DEVICES`, `PIHOLE_API_PASSWORDS` (JSON, keyed by host), and `LOKI_PASSWORD` are all set.
 - `ui/` — Static HTML/JS frontend hosted on S3 behind CloudFront
 - `terraform/` — All AWS infrastructure
 - `scripts/` — Utility scripts

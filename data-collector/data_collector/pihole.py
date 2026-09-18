@@ -2,6 +2,7 @@
 
 import json
 import logging
+import urllib.error
 import urllib.request
 
 logger = logging.getLogger(__name__)
@@ -21,15 +22,34 @@ BLOCKED_STATUSES = {
 ALLOWED_STATUSES = {"FORWARDED", "CACHE", "CACHE_STALE"}
 
 
-def _get(host, path):
-    """GET a Pi-hole API endpoint, return parsed JSON or None on failure."""
-    url = f"http://{host}/api/{path}"
+def _login(host, password):
+    """Authenticate against a Pi-hole instance, return a session ID or None."""
+    url = f"http://{host}/api/auth"
+    body = json.dumps({"password": password}).encode()
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            return json.loads(resp.read())
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+    except (OSError, ValueError):
+        logger.exception("Pi-hole login failed: %s", host)
+        return None
+    return data.get("session", {}).get("sid")
+
+
+def _get(host, path, sid):
+    """GET a Pi-hole API endpoint with a session ID. Return (status, json)."""
+    url = f"http://{host}/api/{path}"
+    req = urllib.request.Request(url, headers={"sid": sid})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, None
     except (OSError, ValueError):
         logger.exception("Pi-hole request failed: %s", url)
-        return None
+        return None, None
 
 
 def classify(status):
@@ -44,17 +64,40 @@ def classify(status):
 class PiholeClient:
     """Poll Pi-hole instances for DNS query events belonging to tracked devices."""
 
-    def __init__(self, hosts, devices):
+    def __init__(self, hosts, devices, passwords):
         """hosts: list of Pi-hole hostnames/IPs to poll.
         devices: dict of {mac: label}, e.g. {"AA:BB:...": "chromebook"}.
+        passwords: dict of {host: api_password} for authenticating each instance.
         """
         self.hosts = hosts
         self.devices = {mac.upper(): label for mac, label in devices.items()}
+        self.passwords = passwords
         self._cursors = {}
+        self._sids = {}
+
+    def _authenticated_get(self, host, path):
+        """GET an endpoint, logging in (or re-logging in on an expired session) as needed."""
+        sid = self._sids.get(host)
+        if not sid:
+            sid = _login(host, self.passwords.get(host, ""))
+            if not sid:
+                return None
+            self._sids[host] = sid
+
+        status, data = _get(host, path, sid)
+        if status == 401:
+            sid = _login(host, self.passwords.get(host, ""))
+            if not sid:
+                self._sids.pop(host, None)
+                return None
+            self._sids[host] = sid
+            status, data = _get(host, path, sid)
+
+        return data
 
     def _device_ips(self, host):
         """Return {ip: device_label} for tracked devices' current known IPs."""
-        data = _get(host, "network/devices?max_devices=200")
+        data = self._authenticated_get(host, "network/devices?max_devices=200")
         if not data:
             return {}
         ip_map = {}
@@ -78,7 +121,7 @@ class PiholeClient:
         cursor = self._cursors.get(host)
         if cursor:
             endpoint += f"&cursor={cursor}"
-        data = _get(host, endpoint)
+        data = self._authenticated_get(host, endpoint)
         if not data:
             return []
 
