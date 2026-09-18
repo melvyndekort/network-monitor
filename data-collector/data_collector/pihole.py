@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 import urllib.error
 import urllib.request
 
@@ -72,7 +73,7 @@ class PiholeClient:
         self.hosts = hosts
         self.devices = {mac.upper(): label for mac, label in devices.items()}
         self.passwords = passwords
-        self._cursors = {}
+        self._last_seen = {}
         self._sids = {}
 
     def _authenticated_get(self, host, path):
@@ -112,25 +113,28 @@ class PiholeClient:
         return ip_map
 
     def poll_host(self, host):
-        """Poll one Pi-hole instance for new queries, return classified events."""
+        """Poll one Pi-hole instance for queries newer than the last poll, return
+        classified events. Pi-hole's "cursor" field is not a pagination token
+        (verified empirically: re-submitting it returns the exact same rows) --
+        the "from" timestamp filter is what actually narrows results.
+        """
         ip_map = self._device_ips(host)
         if not ip_map:
             return []
 
-        endpoint = "queries?length=500"
-        cursor = self._cursors.get(host)
-        if cursor:
-            endpoint += f"&cursor={cursor}"
-        data = self._authenticated_get(host, endpoint)
+        last_seen = self._last_seen.get(host, time.time())
+        data = self._authenticated_get(host, f"queries?length=500&from={last_seen}")
         if not data:
             return []
 
-        new_cursor = data.get("cursor")
-        if new_cursor:
-            self._cursors[host] = new_cursor
-
+        max_time = last_seen
         events = []
         for query in data.get("queries", []):
+            query_time = query.get("time", 0)
+            if query_time <= last_seen:
+                continue  # boundary duplicate from the inclusive "from" filter
+            max_time = max(max_time, query_time)
+
             client_ip = query.get("client", {}).get("ip")
             device = ip_map.get(client_ip)
             if not device:
@@ -148,6 +152,8 @@ class PiholeClient:
                     "pihole_instance": host,
                 }
             )
+
+        self._last_seen[host] = max_time
         return events
 
     def poll(self):

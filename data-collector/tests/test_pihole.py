@@ -43,21 +43,23 @@ def test_poll_host_classifies_and_filters(mock_urlopen):
                 ]
             },
             {
-                "cursor": 42,
                 "queries": [
                     {
+                        "time": 1000,
                         "domain": "roncalli.magister.net",
                         "type": "A",
                         "status": "FORWARDED",
                         "client": {"ip": "10.204.10.108"},
                     },
                     {
+                        "time": 1001,
                         "domain": "youtube.com",
                         "type": "A",
                         "status": "GRAVITY",
                         "client": {"ip": "10.204.10.108"},
                     },
                     {
+                        "time": 1002,
                         "domain": "other-device.example.com",
                         "type": "A",
                         "status": "FORWARDED",
@@ -71,6 +73,7 @@ def test_poll_host_classifies_and_filters(mock_urlopen):
     client = PiholeClient(
         ["pihole-1"], {"74:4C:A1:55:F9:55": "chromebook"}, {"pihole-1": "pw"}
     )
+    client._last_seen["pihole-1"] = 0  # pylint: disable=protected-access
     events = client.poll_host("pihole-1")
 
     assert len(events) == 2
@@ -79,7 +82,71 @@ def test_poll_host_classifies_and_filters(mock_urlopen):
     assert events[0]["device"] == "chromebook"
     assert events[1]["domain"] == "youtube.com"
     assert events[1]["result"] == "blocked"
-    assert client._cursors["pihole-1"] == 42  # pylint: disable=protected-access
+    assert client._last_seen["pihole-1"] == 1002  # pylint: disable=protected-access
+
+
+@patch("data_collector.pihole.urllib.request.urlopen")
+def test_poll_host_skips_queries_at_or_before_last_seen(mock_urlopen):
+    """Regression test: queries at/before the last-seen boundary are not re-emitted.
+
+    Pi-hole's "cursor" field is not an actual pagination token (verified live:
+    resubmitting it returns the exact same rows), so the "from" timestamp
+    filter is inclusive and can return the boundary record again.
+    """
+    mock_urlopen.side_effect = build_responses(
+        [
+            LOGIN_OK,
+            {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
+            {
+                "queries": [
+                    {
+                        "time": 1000,
+                        "domain": "already-seen.com",
+                        "type": "A",
+                        "status": "FORWARDED",
+                        "client": {"ip": "10.0.0.1"},
+                    },
+                    {
+                        "time": 1001,
+                        "domain": "new.com",
+                        "type": "A",
+                        "status": "FORWARDED",
+                        "client": {"ip": "10.0.0.1"},
+                    },
+                ],
+            },
+        ]
+    )
+
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "pw"}
+    )
+    client._last_seen["pihole-1"] = 1000  # pylint: disable=protected-access
+    events = client.poll_host("pihole-1")
+
+    assert len(events) == 1
+    assert events[0]["domain"] == "new.com"
+
+
+@patch("data_collector.pihole.urllib.request.urlopen")
+def test_poll_host_no_new_queries_does_not_regress_last_seen(mock_urlopen):
+    """If nothing new came back, last_seen stays put rather than resetting."""
+    mock_urlopen.side_effect = build_responses(
+        [
+            LOGIN_OK,
+            {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
+            {"queries": []},
+        ]
+    )
+
+    client = PiholeClient(
+        ["pihole-1"], {"AA:BB:CC:DD:EE:FF": "chromebook"}, {"pihole-1": "pw"}
+    )
+    client._last_seen["pihole-1"] = 1000  # pylint: disable=protected-access
+    events = client.poll_host("pihole-1")
+
+    assert not events
+    assert client._last_seen["pihole-1"] == 1000  # pylint: disable=protected-access
 
 
 @patch("data_collector.pihole.urllib.request.urlopen")
@@ -103,9 +170,9 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
             LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
-                "cursor": 1,
                 "queries": [
                     {
+                        "time": 1000,
                         "domain": "a.com",
                         "type": "A",
                         "status": "FORWARDED",
@@ -116,9 +183,9 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
             LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
-                "cursor": 2,
                 "queries": [
                     {
+                        "time": 2000,
                         "domain": "b.com",
                         "type": "A",
                         "status": "GRAVITY",
@@ -134,6 +201,7 @@ def test_poll_combines_multiple_hosts(mock_urlopen):
         {"AA:BB:CC:DD:EE:FF": "chromebook"},
         {"pihole-1": "pw1", "pihole-2": "pw2"},
     )
+    client._last_seen = {"pihole-1": 0, "pihole-2": 0}  # pylint: disable=protected-access
     events = client.poll()
 
     assert len(events) == 2
@@ -168,9 +236,9 @@ def test_poll_one_host_failing_does_not_break_others(mock_urlopen):
             LOGIN_OK,
             {"devices": [{"hwaddr": "AA:BB:CC:DD:EE:FF", "ips": [{"ip": "10.0.0.1"}]}]},
             {
-                "cursor": 1,
                 "queries": [
                     {
+                        "time": 1000,
                         "domain": "a.com",
                         "type": "A",
                         "status": "FORWARDED",
@@ -192,6 +260,7 @@ def test_poll_one_host_failing_does_not_break_others(mock_urlopen):
         {"AA:BB:CC:DD:EE:FF": "chromebook"},
         {"pihole-1": "pw1", "pihole-2": "pw2"},
     )
+    client._last_seen = {"pihole-1": 0, "pihole-2": 0}  # pylint: disable=protected-access
     events = client.poll()
 
     assert len(events) == 1
