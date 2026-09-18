@@ -64,7 +64,9 @@ def test_collect_devices_wireless_present():
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
         ],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["hostname"] == "myhost"
@@ -75,7 +77,9 @@ def test_collect_devices_wireless_present():
 def test_collect_devices_wireless_only_no_arp():
     """Wireless device with no ARP/DHCP entry still shows up."""
     mikrotik = MockMikroTik()
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     devices = main.collect_devices(mikrotik, openwrt)
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["ip"] is None
@@ -113,7 +117,9 @@ def test_poll_sends_events():
         arp=[{"mac": "11:22:33:44:55:66", "ip": "10.204.10.10", "interface": "bridge"}],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     sqs = MagicMock()
     sent = main.poll(mikrotik, openwrt, sqs)
     assert sent == 2
@@ -143,7 +149,9 @@ def test_poll_writes_to_influxdb():
         ],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     sqs = MagicMock()
     influx = MagicMock()
     main.poll(mikrotik, openwrt, sqs, write_presence=influx)
@@ -161,7 +169,9 @@ def test_poll_no_influxdb_write_when_none():
         ],
         dhcp=[],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     sqs = MagicMock()
     main.poll(mikrotik, openwrt, sqs)
 
@@ -176,11 +186,39 @@ def test_poll_enriches_wireless_with_dhcp_hostname():
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "hostname": "myhost"}
         ],
     )
-    openwrt = _mock_openwrt(macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}})
+    openwrt = _mock_openwrt(
+        macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
+    )
     sqs = MagicMock()
     main.poll(mikrotik, openwrt, sqs)
     events = sqs.call_args[0][0]
     assert events[0]["hostname"] == "myhost"
+
+
+def test_poll_pihole_sends_events():
+    """Test poll_pihole writes classified events to Loki when present."""
+    pihole = MagicMock()
+    pihole.poll.return_value = [
+        {"device": "chromebook", "result": "blocked", "domain": "a.com"}
+    ]
+    write_pihole = MagicMock()
+
+    sent = main.poll_pihole(pihole, write_pihole)
+
+    assert sent == 1
+    write_pihole.assert_called_once_with(pihole.poll.return_value)
+
+
+def test_poll_pihole_skips_write_when_no_events():
+    """Test poll_pihole does not call the writer when there are no events."""
+    pihole = MagicMock()
+    pihole.poll.return_value = []
+    write_pihole = MagicMock()
+
+    sent = main.poll_pihole(pihole, write_pihole)
+
+    assert sent == 0
+    write_pihole.assert_not_called()
 
 
 def test_main_exits_without_password(monkeypatch):

@@ -3,23 +3,7 @@
 import json
 from unittest.mock import patch, MagicMock
 from data_collector.openwrt import OpenWrtClient
-
-
-def _mock_urlopen(responses):
-    """Create a mock urlopen that returns responses in order."""
-    call_count = 0
-
-    def side_effect(*args, **kwargs):
-        del args, kwargs
-        nonlocal call_count
-        resp = MagicMock()
-        resp.read.return_value = json.dumps(responses[call_count]).encode()
-        resp.__enter__ = lambda s: s
-        resp.__exit__ = MagicMock(return_value=False)
-        call_count += 1
-        return resp
-
-    return side_effect
+from tests.helpers import mock_urlopen as _mock_urlopen
 
 
 @patch("data_collector.openwrt.urllib.request.urlopen")
@@ -133,4 +117,4 @@ def test_empty_ap(mock_urlopen):
 
     client = OpenWrtClient(["10.0.0.1"], "user", "pass")
     macs = client.get_associated_macs()
-    assert macs == {}
+    assert not macs
