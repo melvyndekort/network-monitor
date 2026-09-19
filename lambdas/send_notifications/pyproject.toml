@@ -7,8 +7,8 @@ dependencies = [
     "urllib3>=2.7.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[project.optional-dependencies]
+dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "moto>=5.0.0",

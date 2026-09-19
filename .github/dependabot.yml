@@ -1,0 +1,82 @@
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "terraform"
+    directory: "/terraform"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "docker"
+    directory: "/data-collector"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "uv"
+    directory: "/data-collector"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "uv"
+    directory: "/lambdas/api_handler"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "uv"
+    directory: "/lambdas/event_router"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "uv"
+    directory: "/lambdas/enrich_metadata"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
+
+  - package-ecosystem: "uv"
+    directory: "/lambdas/send_notifications"
+    schedule:
+      interval: "daily"
+    rebase-strategy: "auto"
+    assignees:
+      - "melvyndekort"
+    reviewers:
+      - "melvyndekort"
