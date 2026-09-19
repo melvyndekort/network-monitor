@@ -180,7 +180,8 @@ def test_handler_new_device_with_hostname_sets_gsi_key(dynamodb):
 
 
 def test_handler_existing_device_updates_fields(dynamodb):
-    """Test handler updates last_ip, online_until, and last_ap for existing device."""
+    """Test handler updates last_ip, online_until, last_ap, and backfills
+    mac_type for an existing device that pre-dates the field."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
     devices_table.put_item(Item={
@@ -200,6 +201,8 @@ def test_handler_existing_device_updates_fields(dynamodb):
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert response['Item']['last_ip'] == '10.204.10.101'
     assert response['Item']['last_ap'] == '10.204.50.13'
+    # 0xAA has the U/L bit set - see test_compute_mac_type
+    assert response['Item']['mac_type'] == 'locally_administered'
 
 
 def test_existing_device_activity_without_hostname_does_not_clear_it(dynamodb):

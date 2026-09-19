@@ -216,13 +216,19 @@ def update_device_hostname(mac, hostname):
 def update_device_last_seen(mac, event, device):
     """Update device last_seen and online_until."""
     now = int(time.time())
-    update_expr = "SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan, online_until = :ou"
+    update_expr = (
+        "SET last_seen = :ls, last_ip = :ip, last_vlan = :vlan,"
+        " online_until = :ou, mac_type = :mt"
+    )
     remove_expr = ""
     attr_values = {
         ":ls": now,
         ":ip": event.get("ip"),
         ":vlan": event.get("vlan"),
         ":ou": now + ONLINE_TTL,
+        # Backfills mac_type on devices created before this field existed -
+        # deterministic from the MAC itself, safe to always (re)write.
+        ":mt": event.get("mac_type"),
     }
     # hostname is a GSI key attribute - only set it when present, and never
     # blank out a previously-known hostname just because this particular
