@@ -21,8 +21,11 @@ resource "aws_dynamodb_table" "devices" {
   # exists under a different (previously assigned, now-rotated) MAC.
   # Sparse by nature - only devices with a hostname attribute are indexed.
   global_secondary_index {
-    name            = "hostname-index"
-    hash_key        = "hostname"
+    name = "hostname-index"
+    key_schema {
+      attribute_name = "hostname"
+      key_type       = "HASH"
+    }
     projection_type = "ALL"
   }
 
