@@ -14,7 +14,8 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
 │  │  • Polls OpenWrt APs for wireless clients (ubus HTTP)      │ │
 │  │  • Polls MikroTik ARP table for wired devices              │ │
 │  │  • Polls DHCP leases for IP/hostname enrichment            │ │
-│  │  • Sends events directly to AWS SQS (every 60s)            │ │
+│  │  • Sends changed/new devices to AWS SQS (60s poll cycle)   │ │
+│  │  • Optional: Pi-hole DNS activity → Grafana Cloud Loki     │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                              ↓                                   │
 │  ┌────────────────────────────────────────────────────────────┐ │
@@ -48,7 +49,8 @@ See [docs/architecture.md](docs/architecture.md) for detailed component document
 - **DHCP Enrichment**: IP/hostname lookup from DHCP leases (not used as presence signal)
 - **DHCP Event Tracking**: Captures DHCP assignments/releases via RouterOS syslog (through Vector)
 - **Presence Tracking**: TTL-based `online_until` timestamp, computed at read time — no state machine
-- **Device Auto-Expiry**: Devices deleted after 14 days of inactivity via DynamoDB TTL
+- **Persistent Identity**: Devices never auto-expire; MAC rotation (e.g. Android/iOS privacy MACs) is detected via hostname continuity and migrates identity onto the new MAC instead of alerting as new
+- **DNS Activity (optional)**: Pi-hole polling for tracked devices' DNS queries, pushed to Grafana Cloud Loki
 - **Notifications**: Apprise integration with per-device toggle and 1-hour throttling
 - **Manufacturer Lookup**: Automatic MAC vendor identification via macvendors.com, maclookup.app, and macvendors.co APIs (fallback chain)
 - **REST API**: CRUD operations via CloudFront + Lambda function URL (OAC/SigV4)
@@ -112,4 +114,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Status**: Active Development · **Version**: 1.0.0 · **Last Updated**: 2026-03-25
+**Status**: Active Development · **Version**: 1.0.0 · **Last Updated**: 2026-09-18

@@ -69,10 +69,25 @@ AP_HOSTS=10.204.50.11,10.204.50.12,10.204.50.13,10.204.50.14  # OpenWrt AP IPs
 AP_USER=netmon                   # rpcd username on APs
 AP_PASSWORD=<ap-password>        # rpcd password on APs
 POLL_INTERVAL=60                 # Seconds between polls
+HEARTBEAT_INTERVAL=900           # Seconds before an unchanged device gets a refresh event anyway (default 15 min)
 SQS_QUEUE_URL=<queue-url>       # FIFO queue URL
 AWS_REGION=eu-west-1
 AWS_ACCESS_KEY_ID=<key>
 AWS_SECRET_ACCESS_KEY=<secret>
+
+# InfluxDB writer (optional — enabled only when both are set)
+INFLUXDB_URL=<url>               # Homelab InfluxDB 2.x, via Cloudflare Tunnel
+INFLUXDB_TOKEN=<token>
+INFLUXDB_ORG=mdekort             # Default if unset
+INFLUXDB_BUCKET=network-monitor  # Default if unset
+
+# Pi-hole DNS activity polling (optional — enabled only when all are set)
+PIHOLE_HOSTS=<host1>,<host2>              # Comma-separated Pi-hole hostnames/IPs
+PIHOLE_TRACKED_DEVICES=<json>             # JSON: which devices to poll DNS activity for
+PIHOLE_API_PASSWORDS=<json>               # JSON, keyed by host: Pi-hole API app password
+LOKI_URL=https://logs-prod-eu-west-0.grafana.net  # Default if unset
+LOKI_USER=876553                          # Default if unset
+LOKI_PASSWORD=<password>                  # Grafana Cloud Loki
 ```
 
 #### Vector
@@ -91,7 +106,6 @@ DEVICES_TABLE=network-monitor-devices
 EVENTS_TABLE=network-monitor-device-events
 DEDUP_TABLE=network-monitor-deduplication
 TOPIC_DISCOVERED=arn:aws:sns:...device-discovered
-TOPIC_ACTIVITY=arn:aws:sns:...device-activity
 TOPIC_NOTIFICATIONS=arn:aws:sns:...notifications
 
 # send-notifications

@@ -22,6 +22,7 @@ Returns all tracked devices with computed online/offline status.
   "devices": [
     {
       "mac": "AA:BB:CC:DD:EE:FF",
+      "mac_type": "vendor",
       "name": null,
       "manufacturer": "Google, Inc.",
       "hostname": "Google-Home-Mini",
@@ -74,5 +75,6 @@ Removes a device from tracking.
 ## Notes
 
 - `current_state` is computed at read time from `online_until` — it is not stored in DynamoDB
-- Devices auto-expire after 14 days of inactivity via DynamoDB TTL
+- `mac_type` is `vendor` or `locally_administered` (randomized MAC), computed from the MAC's U/L bit
+- Devices persist indefinitely — no auto-expiry. A MAC rotation (e.g. Android/iOS privacy MACs) on a device with a previously-known hostname migrates its identity onto the new MAC rather than creating a duplicate entry
 - The API is served via CloudFront → Lambda function URL (OAC with SigV4)

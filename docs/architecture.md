@@ -69,7 +69,8 @@ Network Monitor is a serverless, event-driven system for comprehensive network d
 - Poll 4 OpenWrt APs via ubus HTTP JSON-RPC for associated wireless clients (primary presence signal)
 - Poll MikroTik ARP table every 60 seconds for wired devices (skips stale entries)
 - Poll DHCP leases for IP/hostname enrichment only (not used as presence signal)
-- Send `device_activity` events directly to SQS FIFO queue
+- Send `device_activity` events to SQS FIFO queue only for devices that are new, changed (IP/hostname/AP), or due for a periodic heartbeat — not one event per device per poll
+- Optionally poll Pi-hole for tracked devices' DNS query activity, pushed to Grafana Cloud Loki (see below)
 - Automatic reconnection on MikroTik API failures
 - Graceful handling of individual AP failures (other APs still polled)
 
@@ -93,12 +94,38 @@ Network Monitor is a serverless, event-driven system for comprehensive network d
 }
 ```
 
-**Key Design Decision**: The data collector is a pure sensor — it sends `device_activity` for every device on every poll. It does not track state or decide whether a device is "new". The event-router Lambda handles new-device detection by checking DynamoDB.
+**Key Design Decision**: The data collector is a pure sensor — it does not track state or decide whether a device is "new". The event-router Lambda handles new-device detection by checking DynamoDB.
+
+**Change Detection**: Each poll computes a per-device signature (`ip`, `hostname`, AP) and keeps in-memory state across polls. An event is only sent when the signature changes, is new, or hasn't been sent in `HEARTBEAT_INTERVAL` (default 15 minutes) — the heartbeat exists purely to refresh `online_until` downstream for devices with nothing else to report. A device dropped from the active set is removed from state, so a later reappearance is treated as a fresh change rather than "unchanged". This replaced sending one event per device on every 60s poll, which was driving 2.6-7M DynamoDB write-request-units/month (~40x this doc's own prior estimate).
 
 **Presence Signal Priority**:
 1. **Wireless**: AP association via ubus `hostapd.*.get_clients` — most reliable, drops immediately on disconnect
 2. **Wired**: MikroTik ARP table (non-stale entries) — for devices connected via Ethernet
 3. **DHCP**: Used only for IP/hostname enrichment — leases persist after disconnect, not reliable for presence
+
+**SQS Deduplication**: Each poll sends at most one batched SQS message (all changed devices in one body). The FIFO `MessageDeduplicationId` is a hash of the batch content with `timestamp` excluded, so a retry of the same event set is actually deduplicated by content — a raw per-event timestamp in the hash would make every send unique and defeat FIFO content-based dedup.
+
+#### Pi-hole Client (Optional)
+
+**Purpose**: Poll Pi-hole's REST API for tracked devices' DNS query activity, classify allowed/blocked, push to Grafana Cloud Loki
+
+**Technology**: Python, Pi-hole v6 API (`/api/auth`, `/api/queries`, `/api/network/devices`)
+
+**Responsibilities**:
+- Authenticate per-host via `/api/auth` (session-based; Pi-hole v6 requires a session for all endpoints), re-logging in automatically on an expired/401 session
+- Cross-reference `network/devices` for each tracked device's current IPv4/IPv6 addresses (Pi-hole's `client=` query filter doesn't reliably scope by device, and IPv6 privacy addresses rotate)
+- Track a per-host last-seen query timestamp and use it as the `from` filter boundary — Pi-hole's `cursor` field on `/api/queries` is not a pagination token; resubmitting it returns identical rows, so a timestamp boundary is the only real advance mechanism
+- Classify each query allowed/blocked from Pi-hole's `status` field, push to Loki via `loki.py`
+
+**Why bypass SQS/DynamoDB?**: The device-presence pipeline's schema is device-presence-shaped (one row per device, updated in place), not per-query-DNS-event-shaped. Pushing straight to Loki avoids forcing DNS query volume through a pipeline built for a different access pattern.
+
+**Enabled only when** `PIHOLE_HOSTS`, `PIHOLE_TRACKED_DEVICES`, `PIHOLE_API_PASSWORDS` (JSON, keyed by host), and `LOKI_PASSWORD` are all set — same optional pattern as the InfluxDB writer below.
+
+#### InfluxDB Writer (Optional)
+
+**Purpose**: Write one `device_presence` point per active device per poll to a homelab InfluxDB bucket, for the Device Presence Timeline Grafana dashboard (see [Grafana Setup](grafana-setup.md))
+
+**Enabled only when** `INFLUXDB_URL` and `INFLUXDB_TOKEN` are set.
 
 #### Vector (Syslog Gateway)
 
@@ -197,16 +224,16 @@ message_group_id = "{{ mac }}"
 **Trigger**: SQS (device-events.fifo), batch size 10
 
 **Responsibilities**:
-- Validate and normalize event schema
+- Validate and normalize event schema, classifying each MAC's `mac_type` (`vendor` vs. `locally_administered`, from the U/L bit — a secondary priority signal, not "new = suspicious" on its own, since legitimate devices rotate randomized MACs too)
 - Deduplicate events (30-second window via deduplication table)
-- Check DynamoDB to determine if device is new or existing
-- Create new devices or update `last_seen`/`online_until` for existing ones
-- Detect "back online" transitions (was offline, now active)
+- Check DynamoDB to determine if device is new, existing, or a MAC rotation of a known device — looked up by hostname via the `hostname-index` GSI, so an Android/iOS/ChromeOS privacy MAC rotation migrates the existing device's identity onto the new MAC instead of alerting as a brand-new device
+- Create new devices, migrate identity on a detected rotation, or update `last_seen`/`online_until`/`mac_type` for existing ones
+- Detect "back online" transitions (was offline for longer than a 30-minute grace period, now active)
 - Write to DynamoDB (device_events table)
 - Route to SNS topics:
   - New device → `device-discovered` + `notifications`
-  - Back online → `notifications` + `device-activity`
-  - Normal activity → `device-activity`
+  - MAC rotation → `notifications`
+  - Back online → `notifications`
 
 **Configuration**:
 - Memory: 256 MB
@@ -221,10 +248,10 @@ message_group_id = "{{ mac }}"
 **Responsibilities**:
 - New device discovery notifications always sent (bypass per-device flag)
 - Check if device has `notify` flag enabled (for state change notifications)
-- Check throttle table (1 hour cooldown per mac+event_type)
+- Check throttle table (1 hour cooldown per mac + reason, where reason is the specific transition — `discovered`/`rotated`/`online` — not the raw event type, so a discovery and a back-online for the same device don't share a throttle key)
 - Format notification message
 - HTTP POST to Apprise via Cloudflare Tunnel (with CF Access service token)
-- Update throttle table
+- Update throttle table only after a successful Apprise delivery — a failed send no longer silently swallows the next retry's chance to alert
 
 **Configuration**:
 - Memory: 256 MB
@@ -239,6 +266,7 @@ message_group_id = "{{ mac }}"
 **Responsibilities**:
 - Lookup manufacturer via fallback chain: macvendors.com → maclookup.app → macvendors.co
 - Skip if manufacturer already set
+- Skip the lookup chain entirely for `locally_administered` (randomized) MACs — a vendor lookup can never succeed for one, so there's no point retrying it against 3 APIs every day forever
 - Rate limited (1 second delay between lookups)
 - Update DynamoDB devices table
 - Daily scheduled retry for devices with unknown/missing manufacturer
@@ -269,8 +297,8 @@ See [Event Types](event-types.md) for event schemas and the presence model.
 
 **Design Decisions**:
 - **On-demand pricing**: Unpredictable traffic patterns
-- **TTL enabled**: Automatic cleanup — 14 days for devices, 90 days for events, 5 minutes for dedup, 1 hour for throttle
-- **GSI for queries**: vlan-index for fast lookups by VLAN
+- **TTL enabled**: Automatic cleanup — 90 days for events, 5 minutes for dedup, 1 hour for throttle. The devices table has **no TTL**: identity persists once discovered. An earlier 14-day auto-expiry was removed after being confirmed as a false-positive source — a returning device would re-alert as "new" instead of "back online". The table is tiny (dozens of items), so unbounded storage cost is immaterial.
+- **GSI for identity continuity**: `hostname-index` (hash key `hostname`) — sparse, since only devices with a hostname are indexed. Used to detect MAC rotation: when a MAC is unrecognized but its hostname matches an existing device, that device's identity (name, notify flag, first_seen, etc.) is migrated onto the new MAC instead of creating a duplicate "new device". A prior `vlan-index` GSI was removed — it rejected `NULL` on `last_vlan` for WiFi-only events, throwing `ValidationException` on every write for those devices and silently dropping them (confirmed via CloudWatch: 50-79 errors/hour, 15,495 messages stuck in the DLQ). Any GSI on an attribute that can legitimately be absent needs the same care: DynamoDB rejects a write with a `NULL`-typed value on a GSI key attribute, and — as re-discovered live in production right after this GSI's rollout — also rejects a write to an item that already has an explicit `NULL`-typed value stored for that attribute, even if the write never touches it. `update_device_last_seen` now `REMOVE`s a stray legacy `NULL` hostname instead of leaving it in place, self-healing affected devices on their next event.
 - **Point-in-time recovery**: Enabled on devices and events tables
 
 #### CloudFront Distribution
@@ -304,14 +332,14 @@ See [Event Types](event-types.md) for event schemas and the presence model.
 ### Existing Device Activity Flow
 
 ```
-1. Data Collector polls APs + ARP, sees known device
-2. Data Collector sends device_activity event to SQS
+1. Data Collector polls APs + ARP, sees known device (signature unchanged since last send and heartbeat not due → no event sent this poll)
+2. On change or heartbeat, Data Collector sends device_activity event to SQS
 3. Lambda (event-router) processes event
 4. Event-router checks DynamoDB — device found
-5. Event-router updates last_seen, online_until, ttl
-6. If device was offline (online_until had passed):
+5. Event-router updates last_seen, last_ip, last_vlan, online_until, mac_type
+6. If device was offline for longer than the 30-minute grace period:
    → publishes to notifications topic (back online)
-7. Event-router publishes to device-activity topic
+7. Otherwise, no SNS publish — the event is still recorded in the device_events table
 ```
 
 ### State Change Flow
@@ -368,8 +396,9 @@ SQS (device-events.fifo)
   → event-router Lambda
     → SNS device-discovered → metadata-enricher SQS → enrich-metadata Lambda
     → SNS notifications → notifier SQS → send-notifications Lambda
-    → SNS device-activity (available for future consumers)
 ```
+
+Note: only these two SNS topics exist. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built — the Device Presence Timeline dashboard instead reads from InfluxDB, written directly by the data collector on each poll (see Pi-hole/InfluxDB sections above and [Grafana Setup](grafana-setup.md)).
 
 ## State Management
 
@@ -388,9 +417,9 @@ A device is **online** if `online_until > now`, otherwise **offline**. Status is
 
 **Device Lifecycle**:
 - Created when first seen (by event-router)
-- Updated on every activity event (last_seen, online_until, ttl)
-- Auto-deleted after 14 days of inactivity (DynamoDB TTL)
-- Re-discovered as new device when it returns
+- Updated on every activity event (last_seen, last_ip, last_vlan, online_until, mac_type)
+- Persists indefinitely — no TTL, identity is never auto-expired
+- On a MAC rotation (matched by hostname via `hostname-index`), the existing device's identity is migrated onto the new MAC and the old MAC's item is deleted, rather than creating a duplicate
 
 ### Event History
 
@@ -446,7 +475,7 @@ Stored in DynamoDB `network-monitor-device-events` table.
 **event-router-role**:
 - Read from SQS (device-events.fifo)
 - Read/Write DynamoDB (devices, device_events, deduplication)
-- Publish to SNS (device-discovered, device-activity, notifications)
+- Publish to SNS (device-discovered, notifications)
 
 **send-notifications-role**:
 - Read from SQS (notifier-queue)
@@ -472,7 +501,7 @@ Stored in DynamoDB `network-monitor-device-events` table.
 
 ### Grafana Cloud
 
-- **Loki**: All RouterOS syslog via Vector (labels: `job=vector-lmserver`, `source=syslog`)
+- **Loki**: All RouterOS syslog via Vector (labels: `job=vector-lmserver`, `source=syslog`); tracked devices' Pi-hole DNS activity via the data collector's Pi-hole client (optional, see above)
 - **DHCP Activity dashboard**: Deployed, queries Loki for DHCP assign/deassign events over time
 
 ## References
@@ -485,4 +514,4 @@ Stored in DynamoDB `network-monitor-device-events` table.
 
 ---
 
-**Last Updated**: 2026-03-25
+**Last Updated**: 2026-09-18
