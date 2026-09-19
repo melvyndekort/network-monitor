@@ -14,7 +14,7 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.0",
-    "pylint>=3.3",
+    "pylint>=4.0.8",
     "ruff>=0.16.7",
 ]
 
