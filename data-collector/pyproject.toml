@@ -6,7 +6,7 @@ authors = [{name = "Melvyn de Kort", email = "melvyn@mdekort.nl"}]
 requires-python = ">=3.12"
 dependencies = [
     "librouteros>=4.2.2",
-    "boto3>=1.35",
+    "boto3>=1.43.95",
     "influxdb-client>=1.40",
 ]
 
