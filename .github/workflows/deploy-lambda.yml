@@ -33,7 +33,7 @@ jobs:
           pip install -r requirements.txt -t package/
           cp handler.py package/
           cd package && zip -r ../lambda.zip .
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.function_name }}
           path: ${{ inputs.lambda_dir }}/lambda.zip
