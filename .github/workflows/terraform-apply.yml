@@ -1,0 +1,23 @@
+# The workflow NAME must stay "Deploy Infrastructure": the trigger-deploy job in
+# dependabot.yml dispatches it by that name after an auto-merged Terraform PR
+# (a GITHUB_TOKEN merge fires no push event, so workflow_dispatch is required).
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-*.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    uses: melvyndekort/gha-workflows/.github/workflows/terraform-apply.yml@v1
+    secrets:
+      role-arn: ${{ secrets.AWS_ROLE_ARN }}

@@ -1,0 +1,29 @@
+name: Terraform PR
+
+# Credential-free validation plus a read-only plan, both from the shared
+# workflows in melvyndekort/gha-workflows. Deliberately has no
+# `github.actor != 'dependabot[bot]'` guard: the validate job needs no
+# credentials, so running it for Dependabot is what gives a bump real signal
+# before auto-merge.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-*.yml'
+
+concurrency:
+  group: terraform-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    uses: melvyndekort/gha-workflows/.github/workflows/terraform-pr-validate.yml@v1
+
+  plan:
+    needs: validate
+    uses: melvyndekort/gha-workflows/.github/workflows/terraform-pr-plan.yml@v1
+    secrets:
+      plan-role-arn: ${{ secrets.AWS_PLAN_ROLE_ARN }}
