@@ -1,6 +1,6 @@
-# The workflow NAME must stay "Deploy Infrastructure": the trigger-deploy job in
-# dependabot.yml dispatches it by that name after an auto-merged Terraform PR
-# (a GITHUB_TOKEN merge fires no push event, so workflow_dispatch is required).
+# The workflow NAME is load-bearing: the trigger-deploy job in dependabot.yml
+# dispatches it by name after an auto-merged Terraform PR, because a
+# GITHUB_TOKEN merge fires no push event. Keep the two in sync.
 name: Deploy Infrastructure
 
 on:
@@ -17,9 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 # Permissions do NOT inherit into a reusable workflow: a called workflow can
-# only ever narrow what the CALLER granted, never widen it. Without this block
-# the run is refused before any job starts, with `startup_failure` and no log
-# or annotation to explain it.
+# only narrow what the caller granted, never widen it. Without this block the
+# run is refused before any job starts, with `startup_failure` and no log.
 jobs:
   apply:
     permissions:
