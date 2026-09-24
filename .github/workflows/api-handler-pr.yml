@@ -1,0 +1,19 @@
+name: Test api-handler
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lambdas/api_handler/**'
+      - '.github/workflows/api-handler-pr.yml'
+      - '.github/workflows/lambda-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/lambda-pr.yml
+    with:
+      function_name: network-monitor-api-handler
+      lambda_dir: lambdas/api_handler

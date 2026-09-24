@@ -1,0 +1,19 @@
+name: Test event-router
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lambdas/event_router/**'
+      - '.github/workflows/event-router-pr.yml'
+      - '.github/workflows/lambda-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/lambda-pr.yml
+    with:
+      function_name: network-monitor-event-router
+      lambda_dir: lambdas/event_router

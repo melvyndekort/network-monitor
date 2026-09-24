@@ -1,4 +1,4 @@
-name: Deploy Lambda
+name: Lambda Apply
 
 on:
   workflow_call:
@@ -16,16 +16,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
       - run: uv python install
         working-directory: ${{ inputs.lambda_dir }}
       - run: uv sync --all-extras
-        working-directory: ${{ inputs.lambda_dir }}
-      - run: uv run pytest
-        working-directory: ${{ inputs.lambda_dir }}
-      - run: uv run pylint handler.py
         working-directory: ${{ inputs.lambda_dir }}
       - run: |
           cd ${{ inputs.lambda_dir }}
@@ -39,9 +37,12 @@ jobs:
           path: ${{ inputs.lambda_dir }}/lambda.zip
 
   deploy:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: build
     runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/download-artifact@v8
         with:

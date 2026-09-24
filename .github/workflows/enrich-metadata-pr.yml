@@ -1,0 +1,19 @@
+name: Test enrich-metadata
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lambdas/enrich_metadata/**'
+      - '.github/workflows/enrich-metadata-pr.yml'
+      - '.github/workflows/lambda-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/lambda-pr.yml
+    with:
+      function_name: network-monitor-enrich-metadata
+      lambda_dir: lambdas/enrich_metadata

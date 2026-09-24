@@ -1,0 +1,28 @@
+name: Lambda PR
+
+on:
+  workflow_call:
+    inputs:
+      function_name:
+        required: true
+        type: string
+      lambda_dir:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv python install
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: uv sync --all-extras
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: uv run pytest
+        working-directory: ${{ inputs.lambda_dir }}
+      - run: uv run pylint handler.py
+        working-directory: ${{ inputs.lambda_dir }}
