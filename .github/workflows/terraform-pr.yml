@@ -18,12 +18,26 @@ concurrency:
   group: terraform-pr-${{ github.ref }}
   cancel-in-progress: true
 
+# Permissions do NOT inherit into a reusable workflow: a called workflow can
+# only ever narrow what the CALLER granted, never widen it. A `permissions:`
+# block in the called workflow is not enough on its own — if the caller has not
+# granted the token, the run is refused before any job starts, with
+# `startup_failure` and no log or annotation to explain it.
+#
+# Declared per job so each one gets only what it needs: validate uses no
+# credentials at all.
 jobs:
   validate:
+    permissions:
+      contents: read
     uses: melvyndekort/gha-workflows/.github/workflows/terraform-pr-validate.yml@v1
 
   plan:
     needs: validate
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     uses: melvyndekort/gha-workflows/.github/workflows/terraform-pr-plan.yml@v1
     secrets:
       plan-role-arn: ${{ secrets.AWS_PLAN_ROLE_ARN }}

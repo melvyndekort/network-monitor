@@ -16,8 +16,15 @@ concurrency:
   group: terraform-apply
   cancel-in-progress: false
 
+# Permissions do NOT inherit into a reusable workflow: a called workflow can
+# only ever narrow what the CALLER granted, never widen it. Without this block
+# the run is refused before any job starts, with `startup_failure` and no log
+# or annotation to explain it.
 jobs:
   apply:
+    permissions:
+      id-token: write
+      contents: read
     uses: melvyndekort/gha-workflows/.github/workflows/terraform-apply.yml@v1
     secrets:
       role-arn: ${{ secrets.AWS_ROLE_ARN }}
