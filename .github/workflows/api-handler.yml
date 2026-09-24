@@ -6,7 +6,7 @@ on:
     paths:
       - 'lambdas/api_handler/**'
       - '.github/workflows/api-handler.yml'
-      - '.github/workflows/deploy-lambda.yml'
+      - '.github/workflows/lambda-apply.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,9 @@ permissions:
 
 jobs:
   deploy:
-    uses: ./.github/workflows/deploy-lambda.yml
-    secrets: inherit
+    uses: ./.github/workflows/lambda-apply.yml
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
     with:
       function_name: network-monitor-api-handler
       lambda_dir: lambdas/api_handler

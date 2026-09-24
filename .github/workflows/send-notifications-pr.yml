@@ -1,0 +1,19 @@
+name: Test send-notifications
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lambdas/send_notifications/**'
+      - '.github/workflows/send-notifications-pr.yml'
+      - '.github/workflows/lambda-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/lambda-pr.yml
+    with:
+      function_name: network-monitor-send-notifications
+      lambda_dir: lambdas/send_notifications

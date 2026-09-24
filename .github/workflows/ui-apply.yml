@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'ui/**'
-      - '.github/workflows/deploy-ui.yml'
+      - '.github/workflows/ui-apply.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v7
       - uses: aws-actions/configure-aws-credentials@v6

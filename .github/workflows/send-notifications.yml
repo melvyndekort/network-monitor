@@ -6,7 +6,7 @@ on:
     paths:
       - 'lambdas/send_notifications/**'
       - '.github/workflows/send-notifications.yml'
-      - '.github/workflows/deploy-lambda.yml'
+      - '.github/workflows/lambda-apply.yml'
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,9 @@ permissions:
 
 jobs:
   deploy:
-    uses: ./.github/workflows/deploy-lambda.yml
-    secrets: inherit
+    uses: ./.github/workflows/lambda-apply.yml
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
     with:
       function_name: network-monitor-send-notifications
       lambda_dir: lambdas/send_notifications
