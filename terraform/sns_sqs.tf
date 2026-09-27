@@ -1,4 +1,12 @@
-# SNS Topics and SQS Queues for Event Streaming
+# SQS Queue for Event Streaming (Vector -> event_router)
+#
+# The former SNS-topic -> per-consumer-SQS-queue fan-out for the notifier and
+# metadata-enricher Lambdas is gone: those two queues carried a combined
+# ~4.6k real messages/month but ~460k SQS "empty receive" polls/month (the
+# Lambda SQS poller runs continuously regardless of traffic), which is what
+# pushed the account over the Free Tier SQS-requests limit. event_router now
+# invokes both Lambdas directly (lambda:Invoke, InvocationType=Event) - see
+# lambda.tf and iam.tf.
 
 # Primary SQS Queue - Entry point from Vector
 resource "aws_sqs_queue" "device_events" {
@@ -26,126 +34,4 @@ resource "aws_sqs_queue" "device_events_dlq" {
   tags = {
     Name = "network-monitor-device-events-dlq"
   }
-}
-
-# SNS Topics for event routing
-resource "aws_sns_topic" "device_discovered" {
-  name = "network-monitor-device-discovered"
-
-  tags = {
-    Name = "network-monitor-device-discovered"
-  }
-}
-
-resource "aws_sns_topic" "notifications" {
-  name = "network-monitor-notifications"
-
-  tags = {
-    Name = "network-monitor-notifications"
-  }
-}
-
-# SQS Queues for Lambda processors (fan-out from SNS)
-resource "aws_sqs_queue" "notifier" {
-  name                       = "network-monitor-notifier"
-  visibility_timeout_seconds = 60
-  message_retention_seconds  = 345600 # 4 days
-
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.notifier_dlq.arn
-    maxReceiveCount     = 3
-  })
-
-  tags = {
-    Name = "network-monitor-notifier"
-  }
-}
-
-resource "aws_sqs_queue" "notifier_dlq" {
-  name                      = "network-monitor-notifier-dlq"
-  message_retention_seconds = 1209600 # 14 days
-
-  tags = {
-    Name = "network-monitor-notifier-dlq"
-  }
-}
-
-resource "aws_sqs_queue" "metadata_enricher" {
-  name                       = "network-monitor-metadata-enricher"
-  visibility_timeout_seconds = 60
-  message_retention_seconds  = 345600 # 4 days
-
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.metadata_enricher_dlq.arn
-    maxReceiveCount     = 3
-  })
-
-  tags = {
-    Name = "network-monitor-metadata-enricher"
-  }
-}
-
-resource "aws_sqs_queue" "metadata_enricher_dlq" {
-  name                      = "network-monitor-metadata-enricher-dlq"
-  message_retention_seconds = 1209600 # 14 days
-
-  tags = {
-    Name = "network-monitor-metadata-enricher-dlq"
-  }
-}
-
-# SNS to SQS subscriptions
-resource "aws_sns_topic_subscription" "notifications_to_notifier" {
-  topic_arn = aws_sns_topic.notifications.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.notifier.arn
-}
-
-resource "aws_sns_topic_subscription" "device_discovered_to_enricher" {
-  topic_arn = aws_sns_topic.device_discovered.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.metadata_enricher.arn
-}
-
-# SQS Queue Policies to allow SNS to send messages
-resource "aws_sqs_queue_policy" "notifier" {
-  queue_url = aws_sqs_queue.notifier.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "sns.amazonaws.com"
-      }
-      Action   = "sqs:SendMessage"
-      Resource = aws_sqs_queue.notifier.arn
-      Condition = {
-        ArnEquals = {
-          "aws:SourceArn" = aws_sns_topic.notifications.arn
-        }
-      }
-    }]
-  })
-}
-
-resource "aws_sqs_queue_policy" "metadata_enricher" {
-  queue_url = aws_sqs_queue.metadata_enricher.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "sns.amazonaws.com"
-      }
-      Action   = "sqs:SendMessage"
-      Resource = aws_sqs_queue.metadata_enricher.arn
-      Condition = {
-        ArnEquals = {
-          "aws:SourceArn" = aws_sns_topic.device_discovered.arn
-        }
-      }
-    }]
-  })
 }

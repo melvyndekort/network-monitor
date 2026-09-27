@@ -73,8 +73,8 @@ When an event's MAC isn't found in DynamoDB but its `hostname` matches an existi
 ```
 SQS (device-events.fifo)
   → event-router Lambda
-    → SNS device-discovered → notifier, metadata-enricher (new device or MAC rotation)
-    → SNS notifications → notifier (new device, MAC rotation, or back-online)
+    → direct invoke → enrich-metadata (new device only)
+    → direct invoke → send-notifications (new device, MAC rotation, or back-online)
 ```
 
-Normal (non-transition) activity events are stored to the device_events table but not published to SNS.
+Normal (non-transition) activity events are stored to the device_events table but no invoke is made.

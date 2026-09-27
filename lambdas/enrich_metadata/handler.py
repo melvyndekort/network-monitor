@@ -22,29 +22,32 @@ RANDOMIZED_MAC_MANUFACTURER = 'Randomized MAC (no vendor)'
 
 
 def handler(event, _context):
-    """Enrich device metadata via SQS or scheduled retry."""
-    if 'Records' in event:
-        handle_sqs(event)
+    """Enrich device metadata via direct invoke or scheduled retry."""
+    if "Message" in event:
+        handle_direct(event)
     else:
         handle_scheduled()
-    return {'statusCode': 200}
+    return {"statusCode": 200}
 
 
-def handle_sqs(event):
-    """Process new device discovery events from SQS."""
-    for record in event['Records']:
-        body = json.loads(record['body'])
-        message = json.loads(body['Message'])
+def handle_direct(event):
+    """Process a single new-device-discovery event (direct async invoke).
 
-        mac = message['mac']
-        device = get_device(mac)
+    Previously subscribed to SQS: SNS -> SQS -> Lambda, for a queue that
+    carried only ~8 real messages/month against ~230k+ empty-receive polls.
+    Replaced by event_router invoking this function directly.
+    """
+    message = event["Message"]
 
-        if not device or device.get('manufacturer'):
-            continue
+    mac = message["mac"]
+    device = get_device(mac)
 
-        manufacturer = _resolve_manufacturer(mac, device.get('mac_type'))
-        if manufacturer:
-            update_manufacturer(mac, manufacturer)
+    if not device or device.get("manufacturer"):
+        return
+
+    manufacturer = _resolve_manufacturer(mac, device.get("mac_type"))
+    if manufacturer:
+        update_manufacturer(mac, manufacturer)
 
 
 def handle_scheduled():

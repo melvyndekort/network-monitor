@@ -2,6 +2,7 @@
 
 ## What's Done ✅
 
+- **Removed SNS/SQS fan-out for notifier + metadata-enricher** (2026-09-27): Free Tier alert at 85% of the org's monthly SQS-requests limit traced to `notifier` and `metadata-enricher` queues carrying ~4.6k real messages/month against ~460k "empty receive" polls/month (Lambda's SQS event-source-mapping poller runs continuously regardless of traffic). Removed both SNS topics, both SQS queues + DLQs, their subscriptions/policies, and the two Lambda event source mappings; `event_router` now invokes `send-notifications` and `enrich-metadata` directly via async `lambda:Invoke` (`InvocationType=Event`) — same fire-and-forget semantics, no queue to poll. `device-events.fifo` (the Vector/data-collector entry point) is unchanged. Expected SQS-requests drop: ~460k/month.
 - **Terraform**: DynamoDB tables, SNS/SQS (with DLQs, subscriptions, queue policies), Lambda functions, IAM roles, provider/backend config
 - **Terraform: API Gateway** (deployed 2026-03-15)
   - HTTP API v2 at `https://ys7ivwcdqf.execute-api.eu-west-1.amazonaws.com`

@@ -12,11 +12,11 @@ resource "aws_lambda_function" "event_router" {
 
   environment {
     variables = {
-      DEVICES_TABLE       = aws_dynamodb_table.devices.name
-      EVENTS_TABLE        = aws_dynamodb_table.device_events.name
-      DEDUP_TABLE         = aws_dynamodb_table.deduplication.name
-      TOPIC_DISCOVERED    = aws_sns_topic.device_discovered.arn
-      TOPIC_NOTIFICATIONS = aws_sns_topic.notifications.arn
+      DEVICES_TABLE         = aws_dynamodb_table.devices.name
+      EVENTS_TABLE          = aws_dynamodb_table.device_events.name
+      DEDUP_TABLE           = aws_dynamodb_table.deduplication.name
+      FN_ENRICH_METADATA    = aws_lambda_function.enrich_metadata.function_name
+      FN_SEND_NOTIFICATIONS = aws_lambda_function.send_notifications.function_name
     }
   }
 
@@ -60,12 +60,6 @@ resource "aws_lambda_function" "send_notifications" {
   }
 }
 
-resource "aws_lambda_event_source_mapping" "send_notifications" {
-  event_source_arn = aws_sqs_queue.notifier.arn
-  function_name    = aws_lambda_function.send_notifications.arn
-  batch_size       = 5
-}
-
 resource "aws_cloudwatch_log_group" "send_notifications" {
   name              = "/aws/lambda/${aws_lambda_function.send_notifications.function_name}"
   retention_in_days = 30
@@ -90,12 +84,6 @@ resource "aws_lambda_function" "enrich_metadata" {
   lifecycle {
     ignore_changes = [filename, source_code_hash]
   }
-}
-
-resource "aws_lambda_event_source_mapping" "enrich_metadata" {
-  event_source_arn = aws_sqs_queue.metadata_enricher.arn
-  function_name    = aws_lambda_function.enrich_metadata.arn
-  batch_size       = 2
 }
 
 resource "aws_cloudwatch_event_rule" "enrich_retry" {

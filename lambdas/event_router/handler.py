@@ -19,10 +19,29 @@ devices_table = dynamodb.Table(os.environ.get("DEVICES_TABLE", ""))
 events_table = dynamodb.Table(os.environ.get("EVENTS_TABLE", ""))
 dedup_table = dynamodb.Table(os.environ.get("DEDUP_TABLE", ""))
 
-# SNS setup
-sns = boto3.client("sns")
-TOPIC_DISCOVERED = os.environ.get("TOPIC_DISCOVERED", "")
-TOPIC_NOTIFICATIONS = os.environ.get("TOPIC_NOTIFICATIONS", "")
+# Lambda setup - direct async invoke replaces the SNS->SQS->Lambda fan-out
+# (that path cost ~460k extra SQS requests/month in empty-receive polling for
+# a combined ~4.6k real messages/month; a direct async Invoke has no queue to
+# poll while keeping the "fire and forget, don't block the router" property).
+lambda_client = boto3.client("lambda")
+FN_ENRICH_METADATA = os.environ.get("FN_ENRICH_METADATA", "")
+FN_SEND_NOTIFICATIONS = os.environ.get("FN_SEND_NOTIFICATIONS", "")
+
+
+def _invoke_async(function_name, payload):
+    """Fire-and-forget invoke; swallow errors so routing never fails on it."""
+    if not function_name:
+        return
+    try:
+        lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps(payload),
+        )
+    except (ClientError, BotoCoreError):
+        logger.exception("Failed to invoke %s", function_name)
+
+
 ONLINE_TTL = 900  # 15 minutes
 OFFLINE_GRACE = 1800  # 30 minutes before online notification
 DHCP_EVENT_TYPES = {"dhcp_assigned", "dhcp_released"}
@@ -81,7 +100,7 @@ def handler(event, _context):
 
 
 def _route_event(normalized, now):
-    """Route a single event to appropriate SNS topics."""
+    """Route a single event to the notifier/enricher Lambdas directly."""
     if normalized["event_type"] in DHCP_EVENT_TYPES:
         if normalized.get("hostname"):
             update_device_hostname(normalized["mac"], normalized["hostname"])
@@ -94,7 +113,7 @@ def _route_event(normalized, now):
         update_device_last_seen(normalized["mac"], normalized, device)
         if was_offline and offline_long_enough:
             normalized["new_state"] = "online"
-            sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
+            _invoke_async(FN_SEND_NOTIFICATIONS, {"Message": normalized})
         return
 
     rotated_from = (
@@ -106,13 +125,13 @@ def _route_event(normalized, now):
         migrate_device(rotated_from, normalized, now)
         normalized["new_state"] = "rotated"
         normalized["previous_mac"] = rotated_from["mac"]
-        sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
+        _invoke_async(FN_SEND_NOTIFICATIONS, {"Message": normalized})
         return
 
     create_device(normalized)
     normalized["new_state"] = "discovered"
-    sns.publish(TopicArn=TOPIC_DISCOVERED, Message=json.dumps(normalized))
-    sns.publish(TopicArn=TOPIC_NOTIFICATIONS, Message=json.dumps(normalized))
+    _invoke_async(FN_ENRICH_METADATA, {"Message": normalized})
+    _invoke_async(FN_SEND_NOTIFICATIONS, {"Message": normalized})
 
 
 def normalize_event(body):
