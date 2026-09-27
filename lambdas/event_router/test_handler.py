@@ -16,8 +16,8 @@ os.environ['AWS_DEFAULT_REGION'] = 'eu-west-1'
 os.environ['DEVICES_TABLE'] = 'test-devices'
 os.environ['EVENTS_TABLE'] = 'test-events'
 os.environ['DEDUP_TABLE'] = 'test-dedup'
-os.environ['TOPIC_DISCOVERED'] = 'arn:aws:sns:eu-west-1:123456789012:device-discovered'
-os.environ['TOPIC_NOTIFICATIONS'] = 'arn:aws:sns:eu-west-1:123456789012:notifications'
+os.environ['FN_ENRICH_METADATA'] = 'test-enrich-metadata'
+os.environ['FN_SEND_NOTIFICATIONS'] = 'test-send-notifications'
 
 from moto import mock_aws  # pylint: disable=wrong-import-position
 import boto3  # pylint: disable=wrong-import-position
@@ -67,10 +67,6 @@ def fixture_dynamodb():
             BillingMode='PAY_PER_REQUEST'
         )
 
-        sns = boto3.client('sns', region_name='eu-west-1')
-        sns.create_topic(Name='device-discovered')
-        sns.create_topic(Name='notifications')
-
         yield ddb
 
 
@@ -107,25 +103,22 @@ def _make_raw_event(mac='aa:bb:cc:dd:ee:ff', ip='10.204.10.100', hostname=None):
     }
 
 
-def _subscribe_notifications_queue():
-    """Create SQS queue subscribed to notifications topic, return queue URL."""
-    sqs = boto3.client('sqs', region_name='eu-west-1')
-    queue = sqs.create_queue(QueueName='test-notif')
-    queue_url = queue['QueueUrl']
-    queue_arn = sqs.get_queue_attributes(
-        QueueUrl=queue_url, AttributeNames=['QueueArn']
-    )['Attributes']['QueueArn']
-    sns = boto3.client('sns', region_name='eu-west-1')
-    topics = sns.list_topics()['Topics']
-    notif_arn = [t['TopicArn'] for t in topics if 'notifications' in t['TopicArn']][0]
-    sns.subscribe(TopicArn=notif_arn, Protocol='sqs', Endpoint=queue_arn)
-    return queue_url
+def _mock_lambda_invoke(monkeypatch):
+    """Patch handler.lambda_client.invoke, return the mock for assertions."""
+    import handler as handler_module  # pylint: disable=import-outside-toplevel
+    mock_client = MagicMock()
+    monkeypatch.setattr(handler_module, 'lambda_client', mock_client)
+    return mock_client
 
 
-def _get_notification_messages(queue_url):
-    """Read messages from the notifications SQS queue."""
-    sqs = boto3.client('sqs', region_name='eu-west-1')
-    return sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get('Messages', [])
+def _invoked_notification_messages(mock_client):
+    """Extract the Message payloads sent to FN_SEND_NOTIFICATIONS."""
+    messages = []
+    for call in mock_client.invoke.call_args_list:
+        if call.kwargs.get('FunctionName') == 'test-send-notifications':
+            payload = json.loads(call.kwargs['Payload'])
+            messages.append(payload['Message'])
+    return messages
 
 
 def test_normalize_event():
@@ -223,7 +216,7 @@ def test_existing_device_activity_without_hostname_does_not_clear_it(dynamodb):
     assert response['Item']['hostname'] == 'known-hostname'
 
 
-def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb):
+def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb, monkeypatch):
     """A new MAC with a hostname matching an existing device is a rotation, not a new discovery."""
     old_mac = '11:22:33:00:00:01'
     new_mac = '11:22:33:00:00:02'
@@ -239,7 +232,7 @@ def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb):
         'online_until': now - OFFLINE_GRACE - 60,
     })
 
-    queue_url = _subscribe_notifications_queue()
+    queue_url = _mock_lambda_invoke(monkeypatch)
     result = handler(
         _make_sqs_event(_make_raw_event(mac=new_mac, hostname='Galaxy-A17-5G')),
         None,
@@ -254,10 +247,10 @@ def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb):
     assert new_response['Item']['name'] == 'Daan phone'
     assert new_response['Item']['notify'] is True
 
-    # Notification fires (as a rotation notice), but never on TOPIC_DISCOVERED.
-    messages = _get_notification_messages(queue_url)
+    # Notification fires (as a rotation notice), but never enrichment.
+    messages = _invoked_notification_messages(queue_url)
     assert len(messages) == 1
-    message = json.loads(json.loads(messages[0]['Body'])['Message'])
+    message = messages[0]
     assert message['new_state'] == 'rotated'
     assert message['previous_mac'] == old_mac
 
@@ -299,7 +292,7 @@ def test_update_last_seen_keeps_existing_hostname_untouched(monkeypatch):
     assert 'hostname' not in call_kwargs['UpdateExpression']
 
 
-def test_no_notification_when_device_still_online(dynamodb):
+def test_no_notification_when_device_still_online(dynamodb, monkeypatch):
     """Test no notification when device online_until is in the future."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
@@ -310,12 +303,12 @@ def test_no_notification_when_device_still_online(dynamodb):
         'online_until': now + 600,
     })
 
-    queue_url = _subscribe_notifications_queue()
+    queue_url = _mock_lambda_invoke(monkeypatch)
     handler(_make_sqs_event(_make_raw_event()), None)
-    assert len(_get_notification_messages(queue_url)) == 0
+    assert len(_invoked_notification_messages(queue_url)) == 0
 
 
-def test_no_notification_within_offline_grace(dynamodb):
+def test_no_notification_within_offline_grace(dynamodb, monkeypatch):
     """Test no notification when device offline less than OFFLINE_GRACE."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
@@ -326,12 +319,12 @@ def test_no_notification_within_offline_grace(dynamodb):
         'online_until': now - 300,
     })
 
-    queue_url = _subscribe_notifications_queue()
+    queue_url = _mock_lambda_invoke(monkeypatch)
     handler(_make_sqs_event(_make_raw_event()), None)
-    assert len(_get_notification_messages(queue_url)) == 0
+    assert len(_invoked_notification_messages(queue_url)) == 0
 
 
-def test_notification_sent_after_offline_grace(dynamodb):
+def test_notification_sent_after_offline_grace(dynamodb, monkeypatch):
     """Test notification sent when device offline longer than OFFLINE_GRACE."""
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
@@ -342,26 +335,23 @@ def test_notification_sent_after_offline_grace(dynamodb):
         'online_until': now - OFFLINE_GRACE - 60,
     })
 
-    queue_url = _subscribe_notifications_queue()
+    queue_url = _mock_lambda_invoke(monkeypatch)
     handler(_make_sqs_event(_make_raw_event()), None)
 
-    messages = _get_notification_messages(queue_url)
+    messages = _invoked_notification_messages(queue_url)
     assert len(messages) == 1
-    body = json.loads(messages[0]['Body'])
-    message = json.loads(body['Message'])
-    assert message['new_state'] == 'online'
+    assert messages[0]['new_state'] == 'online'
 
 
 @pytest.mark.usefixtures('dynamodb')
-def test_new_device_discovery_sets_new_state():
+def test_new_device_discovery_sets_new_state(monkeypatch):
     """New-device discovery messages carry new_state=discovered (previously unset)."""
-    queue_url = _subscribe_notifications_queue()
+    queue_url = _mock_lambda_invoke(monkeypatch)
     handler(_make_sqs_event(_make_raw_event()), None)
 
-    messages = _get_notification_messages(queue_url)
+    messages = _invoked_notification_messages(queue_url)
     assert len(messages) == 1
-    message = json.loads(json.loads(messages[0]['Body'])['Message'])
-    assert message['new_state'] == 'discovered'
+    assert messages[0]['new_state'] == 'discovered'
 
 
 def test_batched_events_format(dynamodb):

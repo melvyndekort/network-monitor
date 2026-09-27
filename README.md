@@ -33,7 +33,7 @@ Comprehensive network monitoring solution that tracks all devices across VLANs, 
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  AWS                                                             │
-│  SQS → Lambda (event-router) → SNS → SQS (fan-out)             │
+│  SQS → Lambda (event-router) → direct async invoke              │
 │  Lambdas: event-router, send-notifications, enrich-metadata     │
 │  DynamoDB: device state + event history                         │
 │  CloudFront + S3: UI | CloudFront + Lambda URL: API             │
@@ -63,8 +63,8 @@ See [docs/architecture.md](docs/architecture.md) for detailed component document
 1a. OpenWrt APs → Data Collector → AWS SQS (wireless client associations)
 1b. MikroTik Router → Data Collector → AWS SQS (ARP for wired + DHCP for enrichment)
 1c. MikroTik Router → Vector → AWS SQS (DHCP syslog events)
-2.  SQS → Lambda (event-router) → SNS Topics
-3.  SNS → SQS Queues (fan-out) → Lambda processors
+2.  SQS → Lambda (event-router)
+3.  event-router directly invokes send-notifications / enrich-metadata (async, no queue)
 4.  Lambdas write to DynamoDB
 5.  CloudFront proxies /api/* to Lambda function URL
 ```

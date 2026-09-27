@@ -230,10 +230,10 @@ message_group_id = "{{ mac }}"
 - Create new devices, migrate identity on a detected rotation, or update `last_seen`/`online_until`/`mac_type` for existing ones
 - Detect "back online" transitions (was offline for longer than a 30-minute grace period, now active)
 - Write to DynamoDB (device_events table)
-- Route to SNS topics:
-  - New device → `device-discovered` + `notifications`
-  - MAC rotation → `notifications`
-  - Back online → `notifications`
+- Route directly to processor Lambdas (async `lambda:Invoke`, no queue):
+  - New device → invoke `enrich-metadata` + `send-notifications`
+  - MAC rotation → invoke `send-notifications`
+  - Back online → invoke `send-notifications`
 
 **Configuration**:
 - Memory: 256 MB
@@ -243,7 +243,7 @@ message_group_id = "{{ mac }}"
 
 **Purpose**: Send notifications via Apprise
 
-**Trigger**: SQS (notifier-queue), batch size 5
+**Trigger**: Direct async invoke from event-router (`InvocationType=Event`)
 
 **Responsibilities**:
 - New device discovery notifications always sent (bypass per-device flag)
@@ -261,7 +261,7 @@ message_group_id = "{{ mac }}"
 
 **Purpose**: Enrich device data with manufacturer info
 
-**Trigger**: SQS (metadata-enricher-queue), batch size 2; EventBridge (daily retry)
+**Trigger**: Direct async invoke from event-router (`InvocationType=Event`); EventBridge (daily retry)
 
 **Responsibilities**:
 - Lookup manufacturer via fallback chain: macvendors.com → maclookup.app → macvendors.co
@@ -324,7 +324,7 @@ See [Event Types](event-types.md) for event schemas and the presence model.
 5. Lambda (event-router) processes event
 6. Event-router checks DynamoDB — device not found
 7. Event-router creates device, writes event
-8. Event-router publishes to SNS (device-discovered + notifications)
+8. Event-router invokes send-notifications and enrich-metadata directly (async)
 9. Lambda (send-notifications) sends notification
 10. Lambda (enrich-metadata) looks up manufacturer
 ```
@@ -338,8 +338,8 @@ See [Event Types](event-types.md) for event schemas and the presence model.
 4. Event-router checks DynamoDB — device found
 5. Event-router updates last_seen, last_ip, last_vlan, online_until, mac_type
 6. If device was offline for longer than the 30-minute grace period:
-   → publishes to notifications topic (back online)
-7. Otherwise, no SNS publish — the event is still recorded in the device_events table
+   → invokes send-notifications directly (back online)
+7. Otherwise, no invoke — the event is still recorded in the device_events table
 ```
 
 ### State Change Flow
@@ -394,11 +394,11 @@ All events follow this schema:
 ```
 SQS (device-events.fifo)
   → event-router Lambda
-    → SNS device-discovered → metadata-enricher SQS → enrich-metadata Lambda
-    → SNS notifications → notifier SQS → send-notifications Lambda
+    → direct invoke → enrich-metadata Lambda (new device discovery only)
+    → direct invoke → send-notifications Lambda (new device, MAC rotation, or back-online)
 ```
 
-Note: only these two SNS topics exist. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built — the Device Presence Timeline dashboard instead reads from InfluxDB, written directly by the data collector on each poll (see Pi-hole/InfluxDB sections above and [Grafana Setup](grafana-setup.md)).
+Note: event-router previously fanned events out via two SNS topics into per-consumer SQS queues; both topics and queues were removed (2026-09-27) after the SQS "empty receive" polling overhead on those low-volume queues (~4.6k real messages/month vs. ~460k polls/month) pushed the account over its Free Tier SQS-requests limit. event-router now invokes both processor Lambdas directly (`lambda:Invoke`, `InvocationType=Event`) — same fire-and-forget semantics, no queue to poll. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built — the Device Presence Timeline dashboard instead reads from InfluxDB, written directly by the data collector on each poll (see Pi-hole/InfluxDB sections above and [Grafana Setup](grafana-setup.md)).
 
 ## State Management
 
@@ -475,15 +475,13 @@ Stored in DynamoDB `network-monitor-device-events` table.
 **event-router-role**:
 - Read from SQS (device-events.fifo)
 - Read/Write DynamoDB (devices, device_events, deduplication)
-- Publish to SNS (device-discovered, notifications)
+- Invoke Lambda (enrich-metadata, send-notifications)
 
 **send-notifications-role**:
-- Read from SQS (notifier-queue)
 - Read/Write DynamoDB (devices, notification_throttle)
 - Read SSM parameters (CF Access credentials)
 
 **enrich-metadata-role**:
-- Read from SQS (metadata-enricher-queue)
 - Read/Write DynamoDB (devices)
 
 **api-handler-role**:

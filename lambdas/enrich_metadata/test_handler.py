@@ -69,20 +69,12 @@ def test_handler_enriches_device(mock_sleep, mock_http, aws_setup):
     mock_response.data = b'Apple, Inc.'
     mock_http.request.return_value = mock_response
     
-    event = {
-        'Records': [{
-            'body': json.dumps({
-                'Message': json.dumps({
-                    'mac': 'AA:BB:CC:DD:EE:FF'
-                })
-            })
-        }]
-    }
-    
+    event = {'Message': {'mac': 'AA:BB:CC:DD:EE:FF'}}
+
     result = handler(event, None)
-    
+
     assert result['statusCode'] == 200
-    
+
     # Check manufacturer was updated
     response = devices_table.get_item(Key={'mac': 'AA:BB:CC:DD:EE:FF'})
     assert response['Item']['manufacturer'] == 'Apple, Inc.'
@@ -98,16 +90,8 @@ def test_handler_skips_existing_manufacturer(mock_sleep, mock_http, aws_setup):
         'manufacturer': 'Apple, Inc.'
     })
     
-    event = {
-        'Records': [{
-            'body': json.dumps({
-                'Message': json.dumps({
-                    'mac': 'AA:BB:CC:DD:EE:FF'
-                })
-            })
-        }]
-    }
-    
+    event = {'Message': {'mac': 'AA:BB:CC:DD:EE:FF'}}
+
     result = handler(event, None)
 
     assert result['statusCode'] == 200

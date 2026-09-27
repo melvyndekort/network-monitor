@@ -116,19 +116,10 @@ def test_handler_sends_notification(mock_http, aws_setup):
         'notify': True
     })
     
-    event = {
-        'Records': [{
-            'body': json.dumps({
-                'Message': json.dumps({
-                    'mac': 'AA:BB:CC:DD:EE:FF',
-                    'new_state': 'offline'
-                })
-            })
-        }]
-    }
-    
+    event = {'Message': {'mac': 'AA:BB:CC:DD:EE:FF', 'new_state': 'offline'}}
+
     result = handler(event, None)
-    
+
     assert result['statusCode'] == 200
     assert mock_http.request.called
 
@@ -150,17 +141,8 @@ def test_handler_respects_throttle(mock_http, aws_setup):
         'ttl': 9999999999
     })
     
-    event = {
-        'Records': [{
-            'body': json.dumps({
-                'Message': json.dumps({
-                    'mac': 'AA:BB:CC:DD:EE:FF',
-                    'new_state': 'offline'
-                })
-            })
-        }]
-    }
-    
+    event = {'Message': {'mac': 'AA:BB:CC:DD:EE:FF', 'new_state': 'offline'}}
+
     result = handler(event, None)
 
     assert result['statusCode'] == 200
@@ -168,17 +150,13 @@ def test_handler_respects_throttle(mock_http, aws_setup):
 
 
 def _make_event(mac, new_state, mac_type=None, previous_mac=None):
-    """Build an SNS-wrapped SQS event for the handler."""
+    """Build a direct-invoke event for the handler."""
     message = {'mac': mac, 'new_state': new_state}
     if mac_type:
         message['mac_type'] = mac_type
     if previous_mac:
         message['previous_mac'] = previous_mac
-    return {
-        'Records': [{
-            'body': json.dumps({'Message': json.dumps(message)})
-        }]
-    }
+    return {'Message': message}
 
 
 @patch('handler.http')

@@ -49,10 +49,10 @@ resource "aws_iam_role_policy" "event_router" {
       },
       {
         Effect = "Allow"
-        Action = "sns:Publish"
+        Action = "lambda:InvokeFunction"
         Resource = [
-          aws_sns_topic.device_discovered.arn,
-          aws_sns_topic.notifications.arn
+          aws_lambda_function.enrich_metadata.arn,
+          aws_lambda_function.send_notifications.arn
         ]
       },
       {
@@ -92,15 +92,6 @@ resource "aws_iam_role_policy" "send_notifications" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.notifier.arn
-      },
       {
         Effect = "Allow"
         Action = [
@@ -160,15 +151,6 @@ resource "aws_iam_role_policy" "enrich_metadata" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.metadata_enricher.arn
-      },
       {
         Effect = "Allow"
         Action = [

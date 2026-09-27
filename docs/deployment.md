@@ -105,8 +105,8 @@ LOKI_PASSWORD=<password>         # Grafana Cloud Loki
 DEVICES_TABLE=network-monitor-devices
 EVENTS_TABLE=network-monitor-device-events
 DEDUP_TABLE=network-monitor-deduplication
-TOPIC_DISCOVERED=arn:aws:sns:...device-discovered
-TOPIC_NOTIFICATIONS=arn:aws:sns:...notifications
+FN_ENRICH_METADATA=network-monitor-enrich-metadata
+FN_SEND_NOTIFICATIONS=network-monitor-send-notifications
 
 # send-notifications
 DEVICES_TABLE=network-monitor-devices

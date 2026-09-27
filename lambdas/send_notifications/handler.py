@@ -30,35 +30,39 @@ CF_ACCESS_CLIENT_SECRET = ssm.get_parameter(
 
 
 def handler(event, _context):
-    """Send notifications for device events."""
-    for record in event['Records']:
-        body = json.loads(record['body'])
-        message = json.loads(body['Message'])
+    """Send a notification for a single device event (direct async invoke).
 
-        mac = message['mac']
-        device = get_device(mac)
+    Previously subscribed to SQS: SNS -> SQS -> Lambda. That queue carried
+    ~4.6k real messages/month but ~230k empty-receive polls (Lambda's SQS
+    poller runs continuously regardless of traffic) - removed in favor of
+    event_router invoking this function directly (InvocationType=Event).
+    """
+    message = event["Message"]
 
-        if not device:
-            continue
+    mac = message["mac"]
+    device = get_device(mac)
 
-        # Discovery alerts bypass the per-device notify flag - a device that
-        # was never seen before can't have opted in yet. Every other
-        # transition (back-online, MAC-rotation) respects it.
-        is_discovery = message.get('new_state') == 'discovered'
-        if not is_discovery and not device.get('notify'):
-            continue
+    if not device:
+        return {"statusCode": 200}
 
-        reason = message.get('new_state', message.get('event_type'))
-        throttle_key = f"{mac}#{reason}"
+    # Discovery alerts bypass the per-device notify flag - a device that
+    # was never seen before can't have opted in yet. Every other
+    # transition (back-online, MAC-rotation) respects it.
+    is_discovery = message.get("new_state") == "discovered"
+    if not is_discovery and not device.get("notify"):
+        return {"statusCode": 200}
 
-        if check_throttle(throttle_key):
-            continue
+    reason = message.get("new_state", message.get("event_type"))
+    throttle_key = f"{mac}#{reason}"
 
-        title, body_text = format_notification(device, message)
-        if send_apprise(title, body_text):
-            set_throttle(throttle_key, 3600)
+    if check_throttle(throttle_key):
+        return {"statusCode": 200}
 
-    return {'statusCode': 200}
+    title, body_text = format_notification(device, message)
+    if send_apprise(title, body_text):
+        set_throttle(throttle_key, 3600)
+
+    return {"statusCode": 200}
 
 
 def get_device(mac):
