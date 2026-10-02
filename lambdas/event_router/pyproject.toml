@@ -3,7 +3,7 @@ name = "network-monitor-event-router"
 version = "1.0.0"
 requires-python = ">=3.12"
 dependencies = [
-    "boto3>=1.43.103",
+    "boto3>=1.43.104",
 ]
 
 [project.optional-dependencies]
