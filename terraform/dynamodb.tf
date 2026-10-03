@@ -11,28 +11,17 @@ resource "aws_dynamodb_table" "devices" {
     type = "S"
   }
 
-  attribute {
-    name = "hostname"
-    type = "S"
-  }
-
-  # GSI for MAC-rotation identity continuity: given a hostname on a newly
-  # seen MAC, look up whether a device with the same hostname already
-  # exists under a different (previously assigned, now-rotated) MAC.
-  # Sparse by nature - only devices with a hostname attribute are indexed.
-  global_secondary_index {
-    name = "hostname-index"
-    key_schema {
-      attribute_name = "hostname"
-      key_type       = "HASH"
-    }
-    projection_type = "ALL"
-  }
-
-  # No TTL: device identity persists once discovered. Table is tiny
-  # (dozens of items) so storage cost is immaterial - the alternative
-  # (auto-expiring and re-alerting a returning device as "unrecognized")
-  # is a confirmed false-positive source.
+  # No TTL: device identity persists once discovered, and is never
+  # auto-deleted - only an explicit DELETE /devices/{mac} API call removes
+  # a record. Identity is keyed solely on MAC address; hostname/name are
+  # human-facing labels only and are never used to look up, merge, or
+  # migrate identity between MAC addresses (a prior hostname-index GSI and
+  # MAC-rotation feature did this and was removed: it silently deleted
+  # device records whenever a MAC appeared to "rotate" by hostname match,
+  # which is the opposite of what this system is for - every MAC, including
+  # a device's own previous randomized MACs, must be visible and alertable
+  # as a distinct entry). Table is tiny (dozens of items) so storage cost
+  # is immaterial.
 
   point_in_time_recovery {
     enabled = true

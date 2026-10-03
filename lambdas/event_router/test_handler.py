@@ -37,13 +37,7 @@ def fixture_dynamodb():
             KeySchema=[{'AttributeName': 'mac', 'KeyType': 'HASH'}],
             AttributeDefinitions=[
                 {'AttributeName': 'mac', 'AttributeType': 'S'},
-                {'AttributeName': 'hostname', 'AttributeType': 'S'},
             ],
-            GlobalSecondaryIndexes=[{
-                'IndexName': 'hostname-index',
-                'KeySchema': [{'AttributeName': 'hostname', 'KeyType': 'HASH'}],
-                'Projection': {'ProjectionType': 'ALL'},
-            }],
             BillingMode='PAY_PER_REQUEST'
         )
 
@@ -216,53 +210,51 @@ def test_existing_device_activity_without_hostname_does_not_clear_it(dynamodb):
     assert response['Item']['hostname'] == 'known-hostname'
 
 
-def test_mac_rotation_links_identity_instead_of_new_discovery(dynamodb, monkeypatch):
-    """A new MAC with a hostname matching an existing device is a rotation, not a new discovery."""
-    old_mac = '11:22:33:00:00:01'
-    new_mac = '11:22:33:00:00:02'
+def test_two_devices_with_same_hostname_stay_distinct(dynamodb):
+    """Identity is keyed on MAC alone - two different MACs reporting the same
+    (often generic, vendor-default) hostname must remain two separate device
+    records, never merged. This guards against regressing the old
+    hostname-based MAC-rotation feature, which auto-deleted a device's
+    previous record whenever a new MAC's hostname matched - exactly the
+    unwanted auto-deletion behavior this system must never do again."""
+    mac_a = '11:22:33:00:00:01'
+    mac_b = '11:22:33:00:00:02'
     devices_table = dynamodb.Table('test-devices')
     now = int(time.time())
     devices_table.put_item(Item={
-        'mac': old_mac,
-        'hostname': 'Galaxy-A17-5G',
-        'name': 'Daan phone',
+        'mac': mac_a,
+        'hostname': 'wlan0',
+        'name': 'lamp-tuinkamer',
         'notify': True,
         'first_seen': now - 1000,
         'last_seen': now - 1000,
         'online_until': now - OFFLINE_GRACE - 60,
     })
 
-    queue_url = _mock_lambda_invoke(monkeypatch)
     result = handler(
-        _make_sqs_event(_make_raw_event(mac=new_mac, hostname='Galaxy-A17-5G')),
+        _make_sqs_event(_make_raw_event(mac=mac_b, hostname='wlan0')),
         None,
     )
     assert result['statusCode'] == 200
 
-    # Old identity migrated to the new MAC, old MAC item removed.
-    old_response = devices_table.get_item(Key={'mac': old_mac})
-    assert 'Item' not in old_response
+    # Old record untouched - never deleted, never renamed.
+    old_response = devices_table.get_item(Key={'mac': mac_a})
+    assert 'Item' in old_response
+    assert old_response['Item']['name'] == 'lamp-tuinkamer'
 
-    new_response = devices_table.get_item(Key={'mac': new_mac})
-    assert new_response['Item']['name'] == 'Daan phone'
-    assert new_response['Item']['notify'] is True
-
-    # Notification fires (as a rotation notice), but never enrichment.
-    messages = _invoked_notification_messages(queue_url)
-    assert len(messages) == 1
-    message = messages[0]
-    assert message['new_state'] == 'rotated'
-    assert message['previous_mac'] == old_mac
+    # New MAC gets its own fresh, unnamed record.
+    new_response = devices_table.get_item(Key={'mac': mac_b})
+    assert 'Item' in new_response
+    assert new_response['Item']['name'] is None
+    assert new_response['Item']['notify'] is False
 
 
 def test_update_last_seen_removes_hostname_when_neither_side_has_one(monkeypatch):
     """A device with no known hostname, pinged by an event with no hostname,
     must issue a REMOVE for hostname. Real-world reason: a device written by
-    the old create_device (pre-dating the hostname-index GSI) can have an
-    explicit NULL-type hostname attribute, and DynamoDB rejects ANY write to
-    such an item - not just ones touching hostname - once a GSI exists on
-    that attribute. REMOVE is a no-op when the attribute was already absent,
-    so this is always safe, not just for the legacy-data case."""
+    an older create_device version can carry an explicit NULL-type hostname
+    attribute, which is otherwise never cleared. REMOVE is a no-op when the
+    attribute was already absent, so this is always safe."""
     import handler as handler_module  # pylint: disable=import-outside-toplevel
 
     mock_table = MagicMock()

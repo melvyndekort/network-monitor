@@ -49,9 +49,10 @@ See [docs/architecture.md](docs/architecture.md) for detailed component document
 - **DHCP Enrichment**: IP/hostname lookup from DHCP leases (not used as presence signal)
 - **DHCP Event Tracking**: Captures DHCP assignments/releases via RouterOS syslog (through Vector)
 - **Presence Tracking**: TTL-based `online_until` timestamp, computed at read time — no state machine
-- **Persistent Identity**: Devices never auto-expire; MAC rotation (e.g. Android/iOS privacy MACs) is detected via hostname continuity and migrates identity onto the new MAC instead of alerting as new
-- **DNS Activity (optional)**: Pi-hole polling for tracked devices' DNS queries, pushed to Grafana Cloud Loki
+- **Identity**: Keyed solely on MAC address. Every MAC is its own permanent device record, created once and never auto-deleted or merged with another record — only a manual `DELETE /devices/{mac}` removes one. Name/hostname are human-facing labels only, never used for identity lookups
+- **New/Randomized MAC Alerting**: Any MAC not already known triggers a 🆕 "New Device Detected" alert; a MAC with a locally-administered (randomized) bit set triggers a distinct 🚨 "Unrecognized Device (Randomized MAC)" alert — catching a device trying to evade recognition by changing its MAC, which is the primary reason this system exists
 - **Notifications**: Apprise integration with per-device toggle and 1-hour throttling
+- **DNS Activity (optional)**: Pi-hole polling for tracked devices' DNS queries, pushed to Grafana Cloud Loki
 - **Manufacturer Lookup**: Automatic MAC vendor identification via macvendors.com, maclookup.app, and macvendors.co APIs (fallback chain)
 - **REST API**: CRUD operations via CloudFront + Lambda function URL (OAC/SigV4)
 - **Bootstrap 5 UI**: Dark theme dashboard with inline editing at `https://network-monitor.mdekort.nl`

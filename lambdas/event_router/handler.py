@@ -7,7 +7,6 @@ import time
 from datetime import datetime, timezone
 
 import boto3
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import BotoCoreError, ClientError
 
 logger = logging.getLogger(__name__)
@@ -45,7 +44,6 @@ def _invoke_async(function_name, payload):
 ONLINE_TTL = 900  # 15 minutes
 OFFLINE_GRACE = 1800  # 30 minutes before online notification
 DHCP_EVENT_TYPES = {"dhcp_assigned", "dhcp_released"}
-HOSTNAME_INDEX = "hostname-index"
 
 
 def handler(event, _context):
@@ -100,7 +98,17 @@ def handler(event, _context):
 
 
 def _route_event(normalized, now):
-    """Route a single event to the notifier/enricher Lambdas directly."""
+    """Route a single event to the notifier/enricher Lambdas directly.
+
+    Identity is keyed solely on MAC address - a MAC never seen before is
+    always a new device record, full stop. Name/hostname are human-facing
+    labels only and never used to merge or migrate identity between MACs;
+    a device is deleted only via the explicit DELETE /devices/{mac} API
+    endpoint, never automatically here. A MAC appearing with
+    mac_type=locally_administered (randomized) is flagged as the specific
+    pattern this system exists to catch - not folded into an existing
+    device's history.
+    """
     if normalized["event_type"] in DHCP_EVENT_TYPES:
         if normalized.get("hostname"):
             update_device_hostname(normalized["mac"], normalized["hostname"])
@@ -114,18 +122,6 @@ def _route_event(normalized, now):
         if was_offline and offline_long_enough:
             normalized["new_state"] = "online"
             _invoke_async(FN_SEND_NOTIFICATIONS, {"Message": normalized})
-        return
-
-    rotated_from = (
-        find_device_by_hostname(normalized["hostname"])
-        if normalized.get("hostname")
-        else None
-    )
-    if rotated_from:
-        migrate_device(rotated_from, normalized, now)
-        normalized["new_state"] = "rotated"
-        normalized["previous_mac"] = rotated_from["mac"]
-        _invoke_async(FN_SEND_NOTIFICATIONS, {"Message": normalized})
         return
 
     create_device(normalized)
@@ -171,56 +167,34 @@ def get_device(mac):
     return response.get("Item")
 
 
-def find_device_by_hostname(hostname):
-    """Look up an existing device by hostname, for MAC-rotation identity continuity."""
-    response = devices_table.query(
-        IndexName=HOSTNAME_INDEX,
-        KeyConditionExpression=Key("hostname").eq(hostname),
-        Limit=1,
-    )
-    items = response.get("Items", [])
-    return items[0] if items else None
+def create_device(event):
+    """Create a new device record, keyed solely on MAC address.
 
-
-def _device_item(mac, event, now, existing=None):
-    """Build a devices-table item.
-
-    `hostname` is a GSI key attribute (hostname-index) - it is only included
-    when a value is available, since DynamoDB rejects writing NULL to a
-    String-typed GSI key (the same class of bug that used to break
-    `last_vlan` on the now-removed vlan-index).
+    hostname/name are human-facing labels only, never used to look up or
+    merge identity across MACs - a MAC not already in the table is always
+    a brand-new record. `hostname` is only included when a value is
+    available, since DynamoDB rejects writing NULL to a String-typed
+    attribute that is also indexed elsewhere (the same class of bug that
+    used to break `last_vlan` on the now-removed vlan-index).
     """
-    existing = existing or {}
+    now = int(time.time())
     item = {
-        "mac": mac,
-        "name": existing.get("name"),
-        "manufacturer": existing.get("manufacturer"),
-        "device_type": existing.get("device_type"),
+        "mac": event["mac"],
+        "name": None,
+        "manufacturer": None,
+        "device_type": None,
         "mac_type": event.get("mac_type"),
         "last_ip": event.get("ip"),
         "last_vlan": event.get("vlan"),
-        "notify": existing.get("notify", False),
-        "first_seen": existing.get("first_seen", now),
+        "notify": False,
+        "first_seen": now,
         "last_seen": now,
         "online_until": now + ONLINE_TTL,
         "metadata": {},
     }
-    hostname = event.get("hostname") or existing.get("hostname")
-    if hostname:
-        item["hostname"] = hostname
-    return item
-
-
-def create_device(event):
-    """Create new device."""
-    now = int(time.time())
-    devices_table.put_item(Item=_device_item(event["mac"], event, now))
-
-
-def migrate_device(old_device, event, now):
-    """Migrate an existing device's identity onto a new (rotated) MAC."""
-    devices_table.put_item(Item=_device_item(event["mac"], event, now, existing=old_device))
-    devices_table.delete_item(Key={"mac": old_device["mac"]})
+    if event.get("hostname"):
+        item["hostname"] = event["hostname"]
+    devices_table.put_item(Item=item)
 
 
 def update_device_hostname(mac, hostname):
@@ -249,18 +223,16 @@ def update_device_last_seen(mac, event, device):
         # deterministic from the MAC itself, safe to always (re)write.
         ":mt": event.get("mac_type"),
     }
-    # hostname is a GSI key attribute - only set it when present, and never
-    # blank out a previously-known hostname just because this particular
-    # ping (e.g. a WiFi-only event with no ARP/DHCP match yet) lacks one.
+    # Only set hostname when present, and never blank out a previously-known
+    # hostname just because this particular ping (e.g. a WiFi-only event
+    # with no ARP/DHCP match yet) lacks one.
     if event.get("hostname"):
         update_expr += ", hostname = :hn"
         attr_values[":hn"] = event["hostname"]
     elif not device.get("hostname"):
-        # Clean up a legacy explicit-NULL hostname (written by the old
-        # create_device, before the hostname-index GSI existed). DynamoDB
-        # rejects ANY write to an item whose GSI key attribute is present
-        # with the wrong type, even one that doesn't touch that attribute.
-        # REMOVE is a no-op if the attribute is already absent.
+        # Clean up a legacy explicit-NULL hostname (written by an old
+        # create_device version, before hostname was always conditionally
+        # included). REMOVE is a no-op if the attribute is already absent.
         remove_expr = " REMOVE hostname"
     ap = event.get("metadata", {}).get("ap")
     if ap:
