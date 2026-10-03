@@ -40,7 +40,7 @@ resource "aws_dynamodb_table" "devices" {
   # merely not configuring it.
   ttl {
     enabled        = false
-    attribute_name = ""
+    attribute_name = "ttl"
   }
 
   point_in_time_recovery {
