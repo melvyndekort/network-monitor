@@ -23,6 +23,26 @@ resource "aws_dynamodb_table" "devices" {
   # as a distinct entry). Table is tiny (dozens of items) so storage cost
   # is immaterial.
 
+  # TTL explicitly disabled (not just absent): removing a ttl{} block from
+  # Terraform does NOT reconcile an already-enabled TTL setting in AWS - it
+  # just stops managing it, leaving the real setting untouched. This caused
+  # a severe incident (2026-10-02): TTL was enabled 2026-03-23 and every
+  # device had its ttl attribute refreshed to now+14d on each ping; when
+  # the code stopped writing that attribute (2026-09-18, commit 09da53f)
+  # the ttl block was simply deleted here instead of explicitly disabled,
+  # so AWS kept the feature on. Every device still carrying its last
+  # frozen ttl value from before that deploy got silently hard-deleted by
+  # DynamoDB's TTL sweeper in one window on 2026-10-02 (no CloudTrail
+  # entry - TTL deletes aren't logged), wiping nearly the entire device
+  # roster and all of its custom names. Device deletion must only ever be
+  # a manual action (DELETE /devices/{mac} via the UI), never automated,
+  # never TTL-based - hence disabling the feature outright rather than
+  # merely not configuring it.
+  ttl {
+    enabled        = false
+    attribute_name = ""
+  }
+
   point_in_time_recovery {
     enabled = true
   }
