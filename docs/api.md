@@ -70,11 +70,11 @@ Updates allowed fields: `name`, `notify`, `device_type`.
 DELETE /api/devices/{mac}
 ```
 
-Removes a device from tracking.
+Removes a device from tracking. This is the **only** way a device record is ever deleted — the system never deletes or merges a record automatically.
 
 ## Notes
 
 - `current_state` is computed at read time from `online_until` — it is not stored in DynamoDB
 - `mac_type` is `vendor` or `locally_administered` (randomized MAC), computed from the MAC's U/L bit
-- Devices persist indefinitely — no auto-expiry. A MAC rotation (e.g. Android/iOS privacy MACs) on a device with a previously-known hostname migrates its identity onto the new MAC rather than creating a duplicate entry
+- Identity is keyed solely on MAC address. Devices persist indefinitely — no auto-expiry, no automatic deletion or merging. A MAC rotation (e.g. Android/iOS privacy MACs) always creates a brand-new device record, by design — see [Identity Model](event-types.md#identity-model)
 - The API is served via CloudFront → Lambda function URL (OAC with SigV4)

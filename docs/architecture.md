@@ -224,15 +224,14 @@ message_group_id = "{{ mac }}"
 **Trigger**: SQS (device-events.fifo), batch size 10
 
 **Responsibilities**:
-- Validate and normalize event schema, classifying each MAC's `mac_type` (`vendor` vs. `locally_administered`, from the U/L bit — a secondary priority signal, not "new = suspicious" on its own, since legitimate devices rotate randomized MACs too)
+- Validate and normalize event schema, classifying each MAC's `mac_type` (`vendor` vs. `locally_administered`, from the U/L bit — flagged with a higher-priority discovery alert since a randomized MAC entering the network is the primary pattern this system watches for)
 - Deduplicate events (30-second window via deduplication table)
-- Check DynamoDB to determine if device is new, existing, or a MAC rotation of a known device — looked up by hostname via the `hostname-index` GSI, so an Android/iOS/ChromeOS privacy MAC rotation migrates the existing device's identity onto the new MAC instead of alerting as a brand-new device
-- Create new devices, migrate identity on a detected rotation, or update `last_seen`/`online_until`/`mac_type` for existing ones
+- Check DynamoDB to determine if a device is new or existing, keyed solely on MAC address — a MAC not already in the table is always a brand-new record, with no hostname-based lookup or merging of any kind
+- Create new devices, or update `last_seen`/`online_until`/`mac_type` for existing ones
 - Detect "back online" transitions (was offline for longer than a 30-minute grace period, now active)
 - Write to DynamoDB (device_events table)
 - Route directly to processor Lambdas (async `lambda:Invoke`, no queue):
   - New device → invoke `enrich-metadata` + `send-notifications`
-  - MAC rotation → invoke `send-notifications`
   - Back online → invoke `send-notifications`
 
 **Configuration**:
@@ -248,7 +247,7 @@ message_group_id = "{{ mac }}"
 **Responsibilities**:
 - New device discovery notifications always sent (bypass per-device flag)
 - Check if device has `notify` flag enabled (for state change notifications)
-- Check throttle table (1 hour cooldown per mac + reason, where reason is the specific transition — `discovered`/`rotated`/`online` — not the raw event type, so a discovery and a back-online for the same device don't share a throttle key)
+- Check throttle table (1 hour cooldown per mac + reason, where reason is the specific transition — `discovered`/`online` — not the raw event type, so a discovery and a back-online for the same device don't share a throttle key)
 - Format notification message
 - HTTP POST to Apprise via Cloudflare Tunnel (with CF Access service token)
 - Update throttle table only after a successful Apprise delivery — a failed send no longer silently swallows the next retry's chance to alert
@@ -297,8 +296,8 @@ See [Event Types](event-types.md) for event schemas and the presence model.
 
 **Design Decisions**:
 - **On-demand pricing**: Unpredictable traffic patterns
-- **TTL enabled**: Automatic cleanup — 90 days for events, 5 minutes for dedup, 1 hour for throttle. The devices table has **no TTL**: identity persists once discovered. An earlier 14-day auto-expiry was removed after being confirmed as a false-positive source — a returning device would re-alert as "new" instead of "back online". The table is tiny (dozens of items), so unbounded storage cost is immaterial.
-- **GSI for identity continuity**: `hostname-index` (hash key `hostname`) — sparse, since only devices with a hostname are indexed. Used to detect MAC rotation: when a MAC is unrecognized but its hostname matches an existing device, that device's identity (name, notify flag, first_seen, etc.) is migrated onto the new MAC instead of creating a duplicate "new device". A prior `vlan-index` GSI was removed — it rejected `NULL` on `last_vlan` for WiFi-only events, throwing `ValidationException` on every write for those devices and silently dropping them (confirmed via CloudWatch: 50-79 errors/hour, 15,495 messages stuck in the DLQ). Any GSI on an attribute that can legitimately be absent needs the same care: DynamoDB rejects a write with a `NULL`-typed value on a GSI key attribute, and — as re-discovered live in production right after this GSI's rollout — also rejects a write to an item that already has an explicit `NULL`-typed value stored for that attribute, even if the write never touches it. `update_device_last_seen` now `REMOVE`s a stray legacy `NULL` hostname instead of leaving it in place, self-healing affected devices on their next event.
+- **TTL enabled**: Automatic cleanup — 90 days for events, 5 minutes for dedup, 1 hour for throttle. The devices table has **no TTL and no automatic deletion of any kind**: identity is keyed solely on MAC address, every MAC gets its own permanent record once discovered, and the only way a record disappears is a manual `DELETE /devices/{mac}` via the API. An earlier 14-day auto-expiry was removed after being confirmed as a false-positive source (a returning device would re-alert as "new" instead of "back online"), and a later hostname-based "MAC rotation" feature that auto-deleted a device's old record on a hostname match was also removed (2026-10-03) — it directly undermined the system's purpose of alerting on every new/randomized MAC, and in practice never worked anyway because event-router was never granted `dynamodb:DeleteItem`, so it only produced duplicate, never-cleaned-up records. See [Identity Model](event-types.md#identity-model). The table is tiny (dozens of items), so unbounded storage cost is immaterial.
+- **No GSI on devices**: a prior `hostname-index` GSI (added to support the now-removed MAC-rotation feature) and an even earlier `vlan-index` GSI (removed after it rejected `NULL` on `last_vlan` for WiFi-only events, throwing `ValidationException` on every write for those devices and silently dropping them — confirmed via CloudWatch: 50-79 errors/hour, 15,495 messages stuck in the DLQ) have both been removed. The devices table is looked up only by its `mac` hash key.
 - **Point-in-time recovery**: Enabled on devices and events tables
 
 #### CloudFront Distribution
@@ -395,7 +394,7 @@ All events follow this schema:
 SQS (device-events.fifo)
   → event-router Lambda
     → direct invoke → enrich-metadata Lambda (new device discovery only)
-    → direct invoke → send-notifications Lambda (new device, MAC rotation, or back-online)
+    → direct invoke → send-notifications Lambda (new device or back-online)
 ```
 
 Note: event-router previously fanned events out via two SNS topics into per-consumer SQS queues; both topics and queues were removed (2026-09-27) after the SQS "empty receive" polling overhead on those low-volume queues (~4.6k real messages/month vs. ~460k polls/month) pushed the account over its Free Tier SQS-requests limit. event-router now invokes both processor Lambdas directly (`lambda:Invoke`, `InvocationType=Event`) — same fire-and-forget semantics, no queue to poll. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built — the Device Presence Timeline dashboard instead reads from InfluxDB, written directly by the data collector on each poll (see Pi-hole/InfluxDB sections above and [Grafana Setup](grafana-setup.md)).
@@ -416,10 +415,11 @@ online_until = now + 900 (15 minutes)
 A device is **online** if `online_until > now`, otherwise **offline**. Status is computed at read time by the API handler — no state machine, no state change events.
 
 **Device Lifecycle**:
-- Created when first seen (by event-router)
-- Updated on every activity event (last_seen, last_ip, last_vlan, online_until, mac_type)
-- Persists indefinitely — no TTL, identity is never auto-expired
-- On a MAC rotation (matched by hostname via `hostname-index`), the existing device's identity is migrated onto the new MAC and the old MAC's item is deleted, rather than creating a duplicate
+- Created when first seen (by event-router), keyed solely on its MAC address
+- Updated on every activity event (last_seen, last_ip, last_vlan, online_until, mac_type), always addressed by MAC
+- Persists indefinitely — no TTL, no auto-expiry, no automatic deletion or merging for any reason
+- Deleted only by an explicit `DELETE /devices/{mac}` call (manual, from the UI)
+- A MAC rotation (e.g. an Android/iOS/ChromeOS privacy MAC) always creates a brand-new device record with its own `first_seen` — it is never linked back to, or merged with, any previous record, even if the hostname matches. See [Identity Model](event-types.md#identity-model)
 
 ### Event History
 

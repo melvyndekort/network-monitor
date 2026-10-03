@@ -48,11 +48,6 @@ resource "aws_iam_role_policy" "event_router" {
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = "dynamodb:Query"
-        Resource = "${aws_dynamodb_table.devices.arn}/index/hostname-index"
-      },
-      {
         Effect = "Allow"
         Action = "lambda:InvokeFunction"
         Resource = [

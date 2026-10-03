@@ -47,7 +47,7 @@ def handler(event, _context):
 
     # Discovery alerts bypass the per-device notify flag - a device that
     # was never seen before can't have opted in yet. Every other
-    # transition (back-online, MAC-rotation) respects it.
+    # transition (back-online) respects it.
     is_discovery = message.get("new_state") == "discovered"
     if not is_discovery and not device.get("notify"):
         return {"statusCode": 200}
@@ -95,17 +95,13 @@ def format_notification(device, message):
     if new_state == 'online':
         return ('✅ Device Online', f"{name} is back online")
 
-    if new_state == 'rotated':
-        previous_mac = message.get('previous_mac', 'unknown')
-        return (
-            'ℹ️ Device Re-identified',
-            f"{name} reconnected with a new MAC ({device['mac']}, was {previous_mac})"
-        )
-
     if new_state == 'discovered':
-        # A locally-administered (randomized) MAC with no matching known
-        # hostname is the actual evasion pattern this system exists to
-        # catch - flag it distinctly from an ordinary new vendor-MAC device.
+        # A locally-administered (randomized) MAC entering the network is
+        # the primary signal this system exists to surface - flag it
+        # distinctly from an ordinary new vendor-assigned MAC. Every MAC
+        # not already known is always a genuinely new device record -
+        # there is no "this is actually a known device, just reconnected
+        # under a different MAC" case; identity is keyed on MAC alone.
         if message.get('mac_type') == 'locally_administered':
             title = '🚨 Unrecognized Device (Randomized MAC)'
         else:

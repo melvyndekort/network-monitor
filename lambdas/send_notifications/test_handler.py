@@ -84,17 +84,6 @@ def test_format_notification_new_device_randomized_mac_is_high_priority():
     assert '🚨' in title
 
 
-def test_format_notification_rotated_device():
-    """Test notification formatting for a MAC-rotation identity link."""
-    device = {'mac': 'NEW:MA:C0:00:00:02', 'name': 'Daan phone'}
-    message = {'new_state': 'rotated', 'previous_mac': 'OLD:MA:C0:00:00:01'}
-
-    title, body = format_notification(device, message)
-
-    assert 'Re-identified' in title
-    assert 'OLD:MA:C0:00:00:01' in body
-
-
 def test_format_notification_offline():
     """Test notification formatting for offline device."""
     device = {'mac': 'AA:BB:CC:DD:EE:FF', 'name': 'Test Device'}
