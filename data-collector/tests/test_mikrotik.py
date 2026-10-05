@@ -56,6 +56,47 @@ def test_get_arp_filters_empty_mac(monkeypatch):
     assert result[0]["mac"] == "AA:BB:CC:DD:EE:FF"
 
 
+def test_get_arp_filters_wan_interfaces(monkeypatch):
+    """Test ARP entries learned on WAN-side interfaces are excluded."""
+    client = mikrotik.MikroTikClient("host", "user", "pass")
+
+    def mock_query(*args):
+        """Return mock ARP data with WAN-side and LAN-side entries."""
+        del args
+        return [
+            ARP_ROW,
+            {
+                "mac-address": "60:7E:CD:57:77:EA",
+                "address": "10.180.176.1",
+                "interface": "wan-iptv",
+                "status": "stale",
+            },
+            {
+                "mac-address": "11:22:33:44:55:66",
+                "address": "203.0.113.1",
+                "interface": "wan-internet",
+                "status": "reachable",
+            },
+            {
+                "mac-address": "22:33:44:55:66:77",
+                "address": "198.51.100.1",
+                "interface": "ether1",
+                "status": "reachable",
+            },
+            {
+                "mac-address": "33:44:55:66:77:88",
+                "address": "10.0.0.1",
+                "interface": "pppoe-kpn",
+                "status": "reachable",
+            },
+        ]
+
+    monkeypatch.setattr(client, "_query", mock_query)
+    result = client.get_arp()
+    assert len(result) == 1
+    assert result[0]["mac"] == "AA:BB:CC:DD:EE:FF"
+
+
 def test_get_arp_empty(monkeypatch):
     """Test empty ARP table returns empty list."""
     client = mikrotik.MikroTikClient("host", "user", "pass")
