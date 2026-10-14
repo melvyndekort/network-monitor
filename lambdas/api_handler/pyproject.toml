@@ -10,7 +10,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
-    "moto>=5.0.0",
+    "moto>=5.2.4",
     "pylint>=4.1.3",
 ]
 
