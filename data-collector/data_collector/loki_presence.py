@@ -10,7 +10,8 @@ offline, same semantics the InfluxDB-based dashboard relied on.
 import base64
 import json
 import logging
-import urllib.request
+
+from data_collector.loki import _push
 
 logger = logging.getLogger(__name__)
 
@@ -47,23 +48,6 @@ def create_presence_writer(url, user, password):
                 }
             )
 
-        payload = {"streams": streams}
-        req = urllib.request.Request(
-            push_url,
-            data=json.dumps(payload).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Basic {auth}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status not in (200, 204):
-                    logger.warning("Loki presence push returned status %d", resp.status)
-                else:
-                    logger.info("Loki: wrote %d presence points", len(streams))
-        except OSError:
-            logger.exception("Loki presence push failed")
+        _push(push_url, auth, streams)
 
     return write_presence

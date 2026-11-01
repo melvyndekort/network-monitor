@@ -9,6 +9,30 @@ import urllib.request
 logger = logging.getLogger(__name__)
 
 
+def _push(push_url, auth, streams):
+    """POST a batch of Loki streams, logging (never raising) on failure."""
+    if not streams:
+        return
+    payload = {"streams": streams}
+    req = urllib.request.Request(
+        push_url,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Basic {auth}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status not in (200, 204):
+                logger.warning("Loki push returned status %d", resp.status)
+                return
+        logger.info("Loki: wrote %d streams", len(streams))
+    except OSError:
+        logger.exception("Loki push failed")
+
+
 def create_loki_writer(url, user, password):
     """Create a function that pushes classified Pi-hole events to Grafana Cloud Loki."""
     push_url = f"{url.rstrip('/')}/loki/api/v1/push"
@@ -33,8 +57,10 @@ def create_loki_writer(url, user, password):
             )
             streams.setdefault(key, []).append([now_ns, line])
 
-        payload = {
-            "streams": [
+        _push(
+            push_url,
+            auth,
+            [
                 {
                     "stream": {
                         "job": "pihole-daan",
@@ -44,22 +70,7 @@ def create_loki_writer(url, user, password):
                     "values": values,
                 }
                 for (device, result), values in streams.items()
-            ]
-        }
-        req = urllib.request.Request(
-            push_url,
-            data=json.dumps(payload).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Basic {auth}",
-            },
-            method="POST",
+            ],
         )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status not in (200, 204):
-                    logger.warning("Loki push returned status %d", resp.status)
-        except OSError:
-            logger.exception("Loki push failed")
 
     return write_events

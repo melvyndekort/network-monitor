@@ -14,7 +14,7 @@ def _mock_response(status=204):
     return resp
 
 
-@patch("data_collector.loki_presence.urllib.request.urlopen")
+@patch("data_collector.loki.urllib.request.urlopen")
 def test_write_presence_sends_points(mock_urlopen):
     """write_presence posts one stream per device with the right labels/body."""
     mock_urlopen.return_value = _mock_response()
@@ -44,7 +44,7 @@ def test_write_presence_sends_points(mock_urlopen):
     assert line["online"] is True
 
 
-@patch("data_collector.loki_presence.urllib.request.urlopen")
+@patch("data_collector.loki.urllib.request.urlopen")
 def test_write_presence_skips_empty(mock_urlopen):
     """write_presence does nothing for an empty devices dict."""
     writer = create_presence_writer("https://logs.example.com", "user", "pass")
@@ -53,7 +53,7 @@ def test_write_presence_skips_empty(mock_urlopen):
     mock_urlopen.assert_not_called()
 
 
-@patch("data_collector.loki_presence.urllib.request.urlopen")
+@patch("data_collector.loki.urllib.request.urlopen")
 def test_write_presence_handles_missing_fields(mock_urlopen):
     """write_presence handles devices without optional fields, defaulting vlan."""
     mock_urlopen.return_value = _mock_response()
@@ -69,7 +69,7 @@ def test_write_presence_handles_missing_fields(mock_urlopen):
     assert line["hostname"] is None
 
 
-@patch("data_collector.loki_presence.urllib.request.urlopen")
+@patch("data_collector.loki.urllib.request.urlopen")
 def test_write_presence_multiple_devices_separate_streams(mock_urlopen):
     """Each device gets its own stream (labeled by mac)."""
     mock_urlopen.return_value = _mock_response()
@@ -89,7 +89,7 @@ def test_write_presence_multiple_devices_separate_streams(mock_urlopen):
     assert macs == {"AA:AA:AA:AA:AA:AA", "BB:BB:BB:BB:BB:BB"}
 
 
-@patch("data_collector.loki_presence.urllib.request.urlopen")
+@patch("data_collector.loki.urllib.request.urlopen")
 def test_write_presence_handles_push_error(mock_urlopen):
     """write_presence logs and does not raise on a Loki push failure."""
     mock_urlopen.side_effect = OSError("connection refused")
