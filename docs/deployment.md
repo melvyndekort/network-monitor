@@ -75,11 +75,8 @@ AWS_REGION=eu-west-1
 AWS_ACCESS_KEY_ID=<key>
 AWS_SECRET_ACCESS_KEY=<secret>
 
-# InfluxDB writer (optional — enabled only when both are set)
-INFLUXDB_URL=<url>               # Homelab InfluxDB 2.x, via Cloudflare Tunnel
-INFLUXDB_TOKEN=<token>
-INFLUXDB_ORG=mdekort             # Default if unset
-INFLUXDB_BUCKET=network-monitor  # Default if unset
+# Loki presence writer: no separate config — reuses LOKI_URL/LOKI_USER/LOKI_PASSWORD
+# from the Pi-hole section below. Enabled whenever LOKI_PASSWORD is set.
 
 # Pi-hole DNS activity polling (optional — enabled only when all are set)
 PIHOLE_HOSTS=<host1>,<host2>              # Comma-separated Pi-hole hostnames/IPs

@@ -119,13 +119,13 @@ Network Monitor is a serverless, event-driven system for comprehensive network d
 
 **Why bypass SQS/DynamoDB?**: The device-presence pipeline's schema is device-presence-shaped (one row per device, updated in place), not per-query-DNS-event-shaped. Pushing straight to Loki avoids forcing DNS query volume through a pipeline built for a different access pattern.
 
-**Enabled only when** `PIHOLE_HOSTS`, `PIHOLE_TRACKED_DEVICES`, `PIHOLE_API_PASSWORDS` (JSON, keyed by host), and `LOKI_PASSWORD` are all set — same optional pattern as the InfluxDB writer below.
+**Enabled only when** `PIHOLE_HOSTS`, `PIHOLE_TRACKED_DEVICES`, `PIHOLE_API_PASSWORDS` (JSON, keyed by host), and `LOKI_PASSWORD` are all set — same optional pattern as the presence writer below.
 
-#### InfluxDB Writer (Optional)
+#### Loki Presence Writer (Optional)
 
-**Purpose**: Write one `device_presence` point per active device per poll to a homelab InfluxDB bucket, for the Device Presence Timeline Grafana dashboard (see [Grafana Setup](grafana-setup.md))
+**Purpose**: Write one device-presence log line per active device per poll to Grafana Cloud Loki (`loki_presence.py`), for the Device Presence Timeline Grafana dashboard (see [Grafana Setup](grafana-setup.md)). Each line is labeled `job="device-presence"`, `mac=<mac>`, `vlan=<vlan>`; absence of lines for a mac within a window implies offline. Replaces the previous homelab-InfluxDB-based writer (migrated 2026-11) — same optional, best-effort semantics (logs and swallows errors, never blocks the poll loop).
 
-**Enabled only when** `INFLUXDB_URL` and `INFLUXDB_TOKEN` are set.
+**Enabled only when** `LOKI_PASSWORD` is set (reuses the same Loki credentials as the Pi-hole writer above; no separate config needed).
 
 #### Vector (Syslog Gateway)
 
