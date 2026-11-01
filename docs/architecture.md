@@ -397,7 +397,7 @@ SQS (device-events.fifo)
     → direct invoke → send-notifications Lambda (new device or back-online)
 ```
 
-Note: event-router previously fanned events out via two SNS topics into per-consumer SQS queues; both topics and queues were removed (2026-09-27) after the SQS "empty receive" polling overhead on those low-volume queues (~4.6k real messages/month vs. ~460k polls/month) pushed the account over its Free Tier SQS-requests limit. event-router now invokes both processor Lambdas directly (`lambda:Invoke`, `InvocationType=Event`) — same fire-and-forget semantics, no queue to poll. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built — the Device Presence Timeline dashboard instead reads from InfluxDB, written directly by the data collector on each poll (see Pi-hole/InfluxDB sections above and [Grafana Setup](grafana-setup.md)).
+Note: event-router previously fanned events out via two SNS topics into per-consumer SQS queues; both topics and queues were removed (2026-09-27) after the SQS "empty receive" polling overhead on those low-volume queues (~4.6k real messages/month vs. ~460k polls/month) pushed the account over its Free Tier SQS-requests limit. event-router now invokes both processor Lambdas directly (`lambda:Invoke`, `InvocationType=Event`) — same fire-and-forget semantics, no queue to poll. A previously-planned `device-activity` topic (for a Loki-based presence timeline) was never built that way — the Device Presence Timeline dashboard instead reads directly from Grafana Cloud Loki, written by the data collector on each poll via `loki_presence.py` (migrated off homelab InfluxDB 2026-11; see [Grafana Setup](grafana-setup.md)).
 
 ## State Management
 
