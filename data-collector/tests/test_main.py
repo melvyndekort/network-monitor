@@ -141,8 +141,8 @@ def test_poll_empty_network():
     sqs.assert_not_called()
 
 
-def test_poll_writes_to_influxdb():
-    """Test poll writes presence data to InfluxDB when writer provided."""
+def test_poll_writes_presence():
+    """Test poll writes presence data to the presence writer when provided."""
     mikrotik = MockMikroTik(
         arp=[
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}
@@ -153,16 +153,16 @@ def test_poll_writes_to_influxdb():
         macs={"AA:BB:CC:DD:EE:FF": {"ap": "10.0.0.1", "band": "5GHz", "signal": -50}}
     )
     sqs = MagicMock()
-    influx = MagicMock()
-    main.poll(mikrotik, openwrt, sqs, write_presence=influx)
-    influx.assert_called_once()
-    devices = influx.call_args[0][0]
+    presence_writer = MagicMock()
+    main.poll(mikrotik, openwrt, sqs, write_presence=presence_writer)
+    presence_writer.assert_called_once()
+    devices = presence_writer.call_args[0][0]
     assert "AA:BB:CC:DD:EE:FF" in devices
     assert devices["AA:BB:CC:DD:EE:FF"]["vlan"] == 10
 
 
-def test_poll_no_influxdb_write_when_none():
-    """Test poll works without InfluxDB writer."""
+def test_poll_no_presence_write_when_none():
+    """Test poll works without a presence writer."""
     mikrotik = MockMikroTik(
         arp=[
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "10.204.10.100", "interface": "bridge"}

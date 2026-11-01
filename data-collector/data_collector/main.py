@@ -8,8 +8,8 @@ import time
 
 from librouteros.exceptions import LibRouterosError
 
-from data_collector.influxdb import create_influxdb_writer
 from data_collector.loki import create_loki_writer
+from data_collector.loki_presence import create_presence_writer
 from data_collector.mikrotik import MikroTikClient
 from data_collector.models import make_event, detect_vlan
 from data_collector.openwrt import OpenWrtClient
@@ -154,20 +154,18 @@ def poll_pihole(pihole_client, write_pihole):
     return len(events)
 
 
-def build_influxdb_writer():
-    """Build a presence writer from env vars, or None if InfluxDB is unconfigured."""
-    influxdb_url = os.environ.get("INFLUXDB_URL")
-    influxdb_token = os.environ.get("INFLUXDB_TOKEN")
-    if not influxdb_url or not influxdb_token:
+def build_presence_writer():
+    """Build a presence writer from env vars, or None if Loki is unconfigured."""
+    loki_password = os.environ.get("LOKI_PASSWORD")
+    if not loki_password:
         return None
 
-    write_presence = create_influxdb_writer(
-        influxdb_url,
-        influxdb_token,
-        os.environ.get("INFLUXDB_ORG", "mdekort"),
-        os.environ.get("INFLUXDB_BUCKET", "network-monitor"),
+    write_presence = create_presence_writer(
+        os.environ.get("LOKI_URL", "https://logs-prod-eu-west-0.grafana.net"),
+        os.environ.get("LOKI_USER", "876553"),
+        loki_password,
     )
-    logger.info("InfluxDB writer enabled: %s", influxdb_url)
+    logger.info("Loki presence writer enabled")
     return write_presence
 
 
@@ -239,7 +237,7 @@ def main():
         config["queue_url"], region=os.environ.get("AWS_REGION", "eu-west-1")
     )
 
-    write_presence = build_influxdb_writer()
+    write_presence = build_presence_writer()
     pihole_client, write_pihole = build_pihole_client()
     state = {}
 

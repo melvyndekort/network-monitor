@@ -1,16 +1,239 @@
 {
-  "uid": "network-monitor-presence",
-  "title": "Device Presence Timeline",
-  "tags": ["network-monitor"],
-  "description": "Device presence timeline powered by InfluxDB. Data written by data-collector every 60s.",
-  "datasource": "InfluxDB (Homelab) - cfhzfqe4ywnb4e",
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
   "panels": [
-    "Online Devices (stat)",
-    "Devices per VLAN (piechart)",
-    "Total Online Devices Over Time (timeseries)",
-    "Device Presence Timeline (state-timeline)",
-    "Currently Online Devices (table)"
+    {
+      "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 30},
+              {"color": "red", "value": 50}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 3, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "count(count_over_time({job=\"device-presence\"}[5m]) > 0)",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Online Devices",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 9, "x": 3, "y": 0},
+      "id": 2,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "showLegend": true},
+        "pieType": "pie",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+      },
+      "targets": [
+        {
+          "expr": "count by (vlan) (count_over_time({job=\"device-presence\"}[5m]) > 0)",
+          "legendFormat": "VLAN {{vlan}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices per VLAN (now)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"fixedColor": "green", "mode": "fixed"},
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "pointSize": 5
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": 0}, {"color": "red", "value": 80}]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 3,
+      "options": {
+        "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "count(count_over_time({job=\"device-presence\"}[$__interval]) > 0)",
+          "legendFormat": "devices",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Online Devices Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"fixedColor": "green", "mode": "fixed"},
+          "custom": {"fillOpacity": 80, "lineWidth": 0},
+          "mappings": [
+            {
+              "type": "special",
+              "options": {"match": "null+nan", "result": {"text": "Offline", "color": "red", "index": 0}}
+            },
+            {
+              "type": "range",
+              "options": {"from": 1, "to": 999999, "result": {"text": "Online", "color": "green", "index": 1}}
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 38, "w": 24, "x": 0, "y": 8},
+      "id": 4,
+      "options": {
+        "alignValue": "left",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "never",
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (mac) (count_over_time({job=\"device-presence\", vlan=~\"${vlan:regex}\", mac=~\"${mac:regex}\"}[$__interval]))",
+          "legendFormat": "{{mac}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Device Presence Timeline",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+      "fieldConfig": {
+        "defaults": {"custom": {}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Last Seen"},
+            "properties": [{"id": "unit", "value": "dateTimeAsLocal"}]
+          }
+        ]
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 46},
+      "id": 5,
+      "options": {"footer": {"countRows": true, "show": true}, "showHeader": true},
+      "targets": [
+        {
+          "expr": "{job=\"device-presence\"} | json",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "mac": {"aggregations": [], "operation": "groupby"},
+              "vlan": {"aggregations": ["last"], "operation": "aggregate"},
+              "ip": {"aggregations": ["last"], "operation": "aggregate"},
+              "hostname": {"aggregations": ["last"], "operation": "aggregate"},
+              "Time": {"aggregations": ["last"], "operation": "aggregate"}
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "mac": "MAC",
+              "vlan (last)": "VLAN",
+              "ip (last)": "IP",
+              "hostname (last)": "Hostname",
+              "Time (last)": "Last Seen"
+            }
+          }
+        },
+        {"id": "sortBy", "options": {"fields": {}, "sort": [{"field": "VLAN"}, {"field": "MAC"}]}}
+      ],
+      "title": "Currently Online Devices",
+      "type": "table"
+    }
   ],
-  "variables": ["vlan", "mac"],
-  "note": "Full dashboard JSON managed in Grafana Cloud. This file is a reference only."
+  "refresh": "1m",
+  "schemaVersion": 42,
+  "tags": ["network-monitor"],
+  "templating": {
+    "list": [
+      {
+        "current": {"text": "All", "value": "$__all"},
+        "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+        "includeAll": true,
+        "multi": true,
+        "name": "vlan",
+        "options": [],
+        "query": {"label": "vlan", "stream": "{job=\"device-presence\"}", "type": 1},
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {"text": "All", "value": "$__all"},
+        "datasource": {"type": "loki", "uid": "grafanacloud-logs"},
+        "includeAll": true,
+        "multi": true,
+        "name": "mac",
+        "options": [],
+        "query": {"label": "mac", "stream": "{job=\"device-presence\"}", "type": 1},
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Device Presence Timeline",
+  "uid": "network-monitor-presence",
+  "weekStart": "",
+  "description": "Device presence timeline powered by Grafana Cloud Loki (job=\"device-presence\"). Data written by data-collector every 60s. Migrated off homelab InfluxDB 2026-11."
 }
