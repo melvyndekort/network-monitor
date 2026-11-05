@@ -5,16 +5,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
-  <meta http-equiv="refresh" content="0; url=https://auth.mdekort.nl/login?response_type=token&client_id=3s2qppa564nr44e2igdkb40qq7&redirect_uri=https%3A%2F%2Fnetwork-monitor.mdekort.nl%2Fcallback.html"/>
   <script type="text/javascript">
-    window.location.href = "https://auth.mdekort.nl/login?response_type=token&client_id=3s2qppa564nr44e2igdkb40qq7&redirect_uri=https%3A%2F%2Fnetwork-monitor.mdekort.nl%2Fcallback.html"
+    // Authentik's implicit flow requires a per-request nonce, so this can't
+    // be a static meta-refresh/link like the old Cognito Hosted UI redirect.
+    var nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), function (b) {
+      return b.toString(16).padStart(2, '0');
+    }).join('');
+    var params = new URLSearchParams({
+      response_type: 'id_token',
+      client_id: 'gR3DorO9O4wDWC5HPNzENVrPVPzfjcHaJVqfhZM9',
+      redirect_uri: 'https://network-monitor.mdekort.nl/callback.html',
+      scope: 'openid email',
+      nonce: nonce
+    });
+    window.location.href = 'https://authentik.mdekort.nl/application/o/authorize/?' + params.toString();
   </script>
 
   <title>Network Monitor</title>
 </head>
 
 <body>
-  If you are not redirected automatically, follow this <a href='https://auth.mdekort.nl/login?response_type=token&client_id=3s2qppa564nr44e2igdkb40qq7&redirect_uri=https%3A%2F%2Fnetwork-monitor.mdekort.nl%2Fcallback.html'>link</a>.
+  You are being redirected to log in.
 </body>
 
 </html>
