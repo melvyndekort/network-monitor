@@ -2,11 +2,6 @@ name: Dependabot auto-approve
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "PR number to re-approve and re-enable auto-merge after a manual conflict-resolution push"
-        required: true
 
 permissions:
   contents: write
@@ -15,68 +10,50 @@ permissions:
 jobs:
   dependabot:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.actor == 'dependabot[bot]' && github.event.action != 'closed')
+    if: github.actor == 'dependabot[bot]' && github.event.action != 'closed'
     steps:
-      - name: Resolve PR URL
-        id: pr
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "url=$(gh pr view ${{ inputs.pr_number }} --json url -q .url)" >> "$GITHUB_OUTPUT"
-          else
-            echo "url=${{ github.event.pull_request.html_url }}" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Dependabot metadata
         id: dependabot-metadata
-        if: github.event_name != 'workflow_dispatch'
         uses: dependabot/fetch-metadata@v3.1.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
       - name: Enable auto-merge for Dependabot PRs
         run: gh pr merge --auto --merge "$PR_URL"
         env:
-          PR_URL: ${{steps.pr.outputs.url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-      - name: Re-approve after manual conflict-resolution push
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          gh pr review "$PR_URL" --approve -b "Re-approving after a manual conflict-resolution push, needed from a non-pusher identity because Dependabot's own rebase/recreate failed on this PR."
-        env:
-          PR_URL: ${{steps.pr.outputs.url}}
+          PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Approve patch and minor updates
-        if: ${{github.event_name != 'workflow_dispatch' && (steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' || steps.dependabot-metadata.outputs.update-type == 'version-update:semver-minor')}}
+        if: ${{steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' || steps.dependabot-metadata.outputs.update-type == 'version-update:semver-minor'}}
         run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes a patch or minor update**"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Approve major updates of development dependencies
-        if: ${{github.event_name != 'workflow_dispatch' && steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:development'}}
+        if: ${{steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:development'}}
         run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes a major update of a dependency used only in development**"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Approve GitHub Actions updates
-        if: ${{github.event_name != 'workflow_dispatch' && steps.dependabot-metadata.outputs.package-ecosystem == 'github_actions'}}
+        if: ${{steps.dependabot-metadata.outputs.package-ecosystem == 'github_actions'}}
         run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes a GitHub Actions update**"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Approve indirect dependency updates
-        if: ${{github.event_name != 'workflow_dispatch' && steps.dependabot-metadata.outputs.dependency-type == 'indirect'}}
+        if: ${{steps.dependabot-metadata.outputs.dependency-type == 'indirect'}}
         run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes an indirect dependency update**"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Approve grouped dependency updates
-        if: ${{github.event_name != 'workflow_dispatch' && steps.dependabot-metadata.outputs.dependency-group != '' && steps.dependabot-metadata.outputs.dependency-type != 'direct:production'}}
+        if: ${{steps.dependabot-metadata.outputs.dependency-group != '' && steps.dependabot-metadata.outputs.dependency-type != 'direct:production'}}
         run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes a grouped dependency update**"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
       - name: Comment on major updates of non-development dependencies
-        if: ${{github.event_name != 'workflow_dispatch' && steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:production' && steps.dependabot-metadata.outputs.package-ecosystem != 'github_actions'}}
+        if: ${{steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:production' && steps.dependabot-metadata.outputs.package-ecosystem != 'github_actions'}}
         run: |
           gh pr comment $PR_URL --body "I'm **not approving** this PR because **it includes a major update of a dependency used in production**"
           gh pr edit $PR_URL --add-label "requires-manual-qa"
