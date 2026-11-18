@@ -6,15 +6,15 @@ authors = [{name = "Melvyn de Kort", email = "melvyn@mdekort.nl"}]
 requires-python = ">=3.12"
 dependencies = [
     "librouteros>=4.2.2",
-    "boto3>=1.43.127",
+    "boto3>=1.44.3",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
-    "pylint>=4.1.3",
-    "ruff>=0.17.4",
+    "pylint>=4.1.4",
+    "ruff>=0.17.5",
 ]
 
 [tool.hatch.build.targets.wheel]
